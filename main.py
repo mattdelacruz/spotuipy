@@ -8,17 +8,29 @@ from textual.message import Message
 from textual import events
 from dotenv import load_dotenv
 import os
+import traceback
 import re
 
+class TrackLabel(ListItem):
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
+
+    def compose( self ) -> ComposeResult:
+        yield Label(self.label)
+
 class PlaylistTabs(Static):
-    CSS = """
-        Tab {
-        dock: left;
-    }
-    """
+    # CSS = """
+    #     Tab {
+    #     dock: left;
+    # }
+    # """
+    listView = None
     def __init__(self):
         super().__init__()
         self.tracks_cache = {}
+        self.listView = None
+        self.first_load = True
 
     def compose(self) -> ComposeResult:
         yield Tabs()
@@ -26,47 +38,51 @@ class PlaylistTabs(Static):
 
     def on_mount(self) -> None:
         tabs = self.query_one(Tabs)
-        for name in playlist_names:
-            tabs.add_tab(name)
+        self.listView = self.query_one(ListView)
+        for playlist_name in playlist_names:
+            tabs.add_tab(playlist_name)
+
+    def load_tab_content(self, playlist_name):
+        if playlist_name:
+            self.listView.visible = True
+            if playlist_name in self.tracks_cache:
+                print('found in cache', playlist_name)
+                if not self.first_load:
+                    self.listView.clear()
+                self.listView.extend(self.tracks_cache[playlist_name])
+                self.first_load = False
+            else:
+                print('fetching', playlist_name)
+                if not self.first_load:
+                    self.listView.clear()
+                self.fetch_playlist(playlist_name)
+                self.listView.extend(self.tracks_cache[playlist_name])
+
+    def fetch_playlist(self, playlist_name): 
+        results = sp.playlist(playlist_ids[playlist_name], fields="tracks,next,items")
+        tracks = results['tracks']
+        track_data = []
+        max_widths = {'artist': 0, 'track': 0} 
+        list_items = load_tracks(tracks, track_data, self.listView)
+        # make a ctrl+d command to fetch the next tracks so I don't load really long playlists
+        # tracks should be a linked list
+        # change the tracks_cache to the currently displaying track list
+
+        # while tracks['next']:
+        #     tracks = sp.next(tracks)
+        #     list_items.extend(load_tracks(tracks, track_data, listView))
+        self.tracks_cache[playlist_name] = list_items
+
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
-        listView = self.query_one(ListView)
-        listView.clear()
+        print('tab is activated')
+        traceback.print_stack()
+        self.load_tab_content(str(event.tab.label))
 
-        if event.tab is None:
-            listView.visible = False
-        else:
-            listView.visible = True
-            playlist_name = str(event.tab.label)
-
-            if playlist_name in self.tracks_cache:
-                track_data = self.tracks_cache[playlist_name]            max_widths = {'artist': 0, 'track': 0}  # Initialize max_widths
-                for artist_name, track_name in track_data:
-                    max_widths = update_max_widths(artist_name, track_name, max_widths)
-                    row_format = "{:<{artist_width}} {:{track_width}}"  # Adjust the numbers as needed
-                    formatted_string = row_format.format(artist_name, track_name, artist_width=artist_width, track_width=track_width)
-                    listView.append(ListItem(Label(formatted_string)))
-            else:
-                results = sp.playlist(playlist_ids[playlist_name], fields="tracks,next,items")
-                tracks = results['tracks']
-                track_data = []
-                list_items = []
-                load_tracks(tracks, track_data, list_items)
-                while tracks['next']:
-                    tracks = sp.next(tracks)
-                    load_tracks(tracks, track_data, list_items)
-                listView.clear()
-                listView.extend(list_items)
-                self.tracks_cache[playlist_name] = track_data
-     
 class Spotuify(App):
     def compose(self) -> ComposeResult:
         yield PlaylistTabs()
         yield Footer()
-
-    def load_new_data(self):
-        new_data = "New data loaded!"
-        self.list_view.update(new_data)
 
 def setup_spotify_auth() -> None:
     client_id = os.environ.get("SPOTIPY_CLIENT_ID")
@@ -76,36 +92,31 @@ def setup_spotify_auth() -> None:
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope=scope))
     return sp
 
-# def load_tracks(tracks, track_data, list_items) -> None:
-#     for item in tracks['items']:
-#         track = item['track']
-#         track_data.append((track['artists'][0]['name'], track['name']))
-#         list_items.append(ListItem(Label("%32.32s %s" % (track['artists'][0]['name'], track['name']))))   
-def update_max_widths(artist_name, track_name, max_widths):
-    # Update the maximum widths based on the length of the new artist_name and track_name
+def truncate_track(text, max_width):
+    if len(text) > max_width:
+        return text[:max_width]
+    return text
+
+def format_artist_track(artist_name, track_name, max_width):
+    return truncate_track(artist_name, max_width), truncate_track(track_name, max_width)
+
+def update_max_widths(artist_name, track_name, max_widths) -> None:
     max_widths['artist'] = max(max_widths['artist'], len(artist_name))
     max_widths['track'] = max(max_widths['track'], len(track_name))
-    return max_widths
 
-def load_tracks(tracks, track_data, list_items) -> None:    
-    # Create the format string with dynamic widths
-    
+def load_tracks(tracks, track_data, listView) -> list:
+    list_items = []
     for item in tracks['items']:
         track = item['track']
         artist_name = track['artists'][0]['name']
         track_name = track['name']
-
-        max_widths = update_max_widths(artist_name, track_name, max_widths)
-        
-        # Append the data tuple to track_data
-        track_data.append((artist_name, track_name))
-        row_format = "{:<{artist_width}} {:{track_width}}"  # Adjust the numbers as needed
-
-        # Use the format string to format and append the ListItem
-        formatted_string = row_format.format(artist_name, track_name, artist_width=artist_width, track_width=track_width)
-        list_items.append(ListItem(Label(formatted_string)))   
-
-
+        artist_name_formatted, track_name_formatted = format_artist_track(artist_name, track_name, 30)
+        track_data.append((artist_name_formatted, track_name_formatted))
+        row_format = "{:<30} {:<30}"
+        formatted_string = row_format.format(artist_name_formatted, track_name_formatted)
+        list_items.append(TrackLabel(formatted_string))
+    return list_items
+    
 def load_user_playlists(playlist_names, playlist_ids, user_id) -> None:
     for playlist in playlists['items']:
         if playlist['owner']['id'] == user_id:
