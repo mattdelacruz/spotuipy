@@ -1,3 +1,4 @@
-Button {
-  background: transparent;
+#playlist-tabs {
+  background: black;
+  width: 20%;
 }
