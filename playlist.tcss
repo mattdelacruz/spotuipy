@@ -1,4 +1,30 @@
 #playlist-tabs {
-  background: black;
   width: 20%;
+  height: auto;
+  border: solid white;
+}
+
+PlaylistLabel {
+  background: transparent;
+}
+Screen {
+  background: transparent;
+  overflow: auto;
+}
+#playlist-table {
+  height: 100%;
+  border: solid white;
+}
+
+Player {
+  height: 85%;
+}
+
+PlayerControls {
+  height: 10%;
+  border: solid white;
+}
+
+CurrentSong {
+  width: 100%;
 }
