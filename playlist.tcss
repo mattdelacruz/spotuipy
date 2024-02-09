@@ -1,7 +1,12 @@
 #playlist-tabs {
   width: 20%;
-  height: auto;
+  height: 50%;
   border: solid white;
+  scrollbar-size: 0 0;
+}
+#playlist-table {
+  background: transparent;
+  scrollbar-size: 0 0;
 }
 
 PlaylistLabel {
@@ -9,22 +14,20 @@ PlaylistLabel {
 }
 Screen {
   background: transparent;
-  overflow: auto;
 }
 #playlist-table {
   height: 100%;
   border: solid white;
 }
-
 Player {
-  height: 85%;
+  height: 80%;
 }
-
 PlayerControls {
-  height: 10%;
+  height: 20%;
   border: solid white;
 }
-
+ProgressBar {
+}
 CurrentSong {
   width: 100%;
 }
