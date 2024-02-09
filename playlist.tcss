@@ -1,33 +1,61 @@
+Screen {
+  background: transparent;
+}
+
 #playlist-tabs {
   width: 20%;
-  height: 50%;
+  height: auto;
   border: solid white;
   scrollbar-size: 0 0;
 }
+
+#playlist-tabs:focus {
+  border: solid red;
+  border_title_style: bold;
+}
+
 #playlist-table {
+  height: 100%;
+  border: solid white;
+  scrollbar-gutter: auto;
   background: transparent;
   scrollbar-size: 0 0;
+}
+#playlist-table:focus {
+  border: solid red;
+  border_title_style: bold;
 }
 
 PlaylistLabel {
   background: transparent;
 }
-Screen {
+
+PlaylistLabel:hover {
   background: transparent;
+  color: red
 }
-#playlist-table {
-  height: 100%;
-  border: solid white;
+
+PlaylistLabel > Label:hover {
+  background: transparent;
+  color: red;
 }
+
 Player {
   height: 80%;
 }
 PlayerControls {
   height: 20%;
   border: solid white;
+  margin-bottom: 0;
 }
 ProgressBar {
+  height: 50%;
 }
 CurrentSong {
   width: 100%;
+  height: 50%;
+}
+
+TrackProgress ETAStatus {
+  display: none;
 }

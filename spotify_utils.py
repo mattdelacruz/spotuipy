@@ -57,8 +57,7 @@ def start_playback_on_active_device(track_uri):
     else:
         print("No active device found.")
         # load some error window saying 404 device not found and add instructions for user to run a Spotify daemon like spotifyd
-            
-    
+
 def load_user_playlists(playlists):
     playlist_names = []
     playlist_ids = {}

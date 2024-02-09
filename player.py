@@ -3,7 +3,7 @@ from textual.widgets import Static, Label, ListView, ListItem, DataTable
 from textual.containers import Horizontal
 from textual import events, on
 from spotify_utils import load_tracks, load_user_playlists, start_playback_on_active_device
-from widgets import PlaylistLabel
+from widgets import PlaylistLabel, TrackProgress
 from spotify_client import SpotifyClient
 
 sp = SpotifyClient.get_instance()
@@ -28,6 +28,7 @@ class Player(Static):
         self.tabs = None
         self.highlighted_track = None
         self.prev_tracks = None
+        self.track_progress = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -43,7 +44,9 @@ class Player(Static):
         self.track_table.border_title = "Tracks"
         self.playlists = sp.current_user_playlists()
         self.playlist_names, self.playlist_ids = load_user_playlists(self.playlists)
+        self.track_progress = self.app.query_one(TrackProgress)
         added_playlist_names = set()
+
         for playlist_name in self.playlist_names:
             if playlist_name not in added_playlist_names:
                 self.playlist_list.append(PlaylistLabel(playlist_name))
@@ -57,6 +60,7 @@ class Player(Static):
             self.track_table.visible = True
             self.track_table.clear()
             track_list, unformatted_track_list = self.fetch_playlist_tracks(playlist_name)
+
             for track_list_item, unformatted_track_list_item in zip(track_list, unformatted_track_list):
                 unique_key = str(unformatted_track_list_item[0])
                 self.track_table.add_row(*track_list_item, key=unique_key)
@@ -72,18 +76,23 @@ class Player(Static):
 
     def fetch_next_playlist_tracks(self, playlist_name: str, tracks):
         self.curr_displayed_playlist = playlist_name
+
         track_list, unformatted_track_list, self.track_info, self.track_uris, self.uri_list = load_tracks(tracks, self.track_table, self.curr_displayed_playlist)
+        
         self.curr_displayed_tracks[playlist_name] = tracks
         return track_list, unformatted_track_list
 
     def create_queue(self) -> None:
         curr_playing = sp.currently_playing()
+        
         if not curr_playing or not curr_playing['is_playing']:
             return
+
         curr_track_name = self.curr_song
         playlist = self.curr_displayed_playlist
         playlist_info = self.track_info.get(playlist, {})
         curr_track_uri = playlist_info.get(curr_track_name, {}).get('uri')
+
         if curr_track_uri:
             self.track_queue.setdefault(playlist, [])
             try:
@@ -95,8 +104,10 @@ class Player(Static):
                     curr_index = keys_list.index(curr_track_uri)
                     next_tracks = keys_list[curr_index + 1:]
                     self.clear_queue(playlist)
+
                     for next_track_uri in next_tracks:
                         self.enqueue_track(playlist, next_track_uri)
+                        
                 except ValueError:
                     self.clear_queue(playlist)
                     pass
@@ -154,8 +165,10 @@ class Player(Static):
         if currently_playing:
             if currently_playing['is_playing']:
                 sp.pause_playback()
+                self.track_progress.pause_progress_bar()
             else:
                 sp.start_playback()
+                self.track_progress.resume_progress_bar()
         else:
             print("No track currently playing!")
                 
@@ -168,7 +181,6 @@ class Player(Static):
     @on(DataTable.RowSelected, "#playlist-table")
     def song_selected(self, event: DataTable.RowSelected) -> None:
         track_uri = self.track_info[self.curr_displayed_playlist][event.row_key.value]['uri']
-        print(track_uri)
         start_playback_on_active_device(track_uri)
         self.curr_song = self.track_uris[track_uri]
         self.create_queue()
