@@ -47,7 +47,6 @@ def find_active_device():
 
 def start_playback_on_active_device(track_uri):
     device_id = find_active_device()
-    print(device_id)
     if device_id:
         if device_id != -1:
             sp.transfer_playback(device_id, force_play=False)

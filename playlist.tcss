@@ -25,7 +25,21 @@ Screen {
   border: solid red;
   border_title_style: bold;
 }
-
+#playlist-table > .datatable--hover {
+  background: transparent;
+  color: red;
+}
+#playlist-table > .datatable--cursor {
+  background: transparent;
+  color: red;
+  text-style: bold;
+}
+#playlist-table > .datatable--header {
+  background: transparent;
+}
+#playlist-table > .datatable--header-hover {
+  background: transparent;
+}
 PlaylistLabel {
   background: transparent;
 }

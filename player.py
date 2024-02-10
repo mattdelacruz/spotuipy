@@ -60,10 +60,14 @@ class Player(Static):
             self.track_table.visible = True
             self.track_table.clear()
             track_list, unformatted_track_list = self.fetch_playlist_tracks(playlist_name)
-
-            for track_list_item, unformatted_track_list_item in zip(track_list, unformatted_track_list):
-                unique_key = str(unformatted_track_list_item[0])
-                self.track_table.add_row(*track_list_item, key=unique_key)
+            
+            for i, (track_list_item, unformatted_track_list_item) in enumerate(zip(track_list, unformatted_track_list)):
+                unique_key = f"{unformatted_track_list_item[0]}_{i}"
+                print(track_list_item, unique_key)
+                try:
+                    self.track_table.add_row(*track_list_item, key=unique_key)
+                except Exception as e:
+                    print(f"Error adding row with key {unique_key}: {e}")
 
     def fetch_playlist_tracks(self, playlist_name: str):
         self.curr_displayed_playlist = playlist_name 
@@ -177,10 +181,12 @@ class Player(Static):
         self.curr_displayed_playlist = str(event.item.label)
         self.load_playlist_content(str(event.item.label))
     
-
     @on(DataTable.RowSelected, "#playlist-table")
     def song_selected(self, event: DataTable.RowSelected) -> None:
-        track_uri = self.track_info[self.curr_displayed_playlist][event.row_key.value]['uri']
+        key_parts = event.row_key.value.split('_')
+        original_song_title = '_'.join(key_parts[:-1])
+        track_uri = self.track_info[self.curr_displayed_playlist][original_song_title]['uri']
+        
         start_playback_on_active_device(track_uri)
         self.curr_song = self.track_uris[track_uri]
         self.create_queue()

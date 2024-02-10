@@ -53,7 +53,6 @@ class CurrentSongLabel(Label):
         super().update(new_label)
         self.label = new_label
 
-
 class CurrentSong(Static):
     def __init__(self):
         super().__init__()
@@ -74,12 +73,12 @@ class CurrentSong(Static):
             progress_ms = track['progress_ms']
             is_playing = track['is_playing']
             track_progress: TrackProgress = self.app.query_one(TrackProgress)
-            if self.query_one("#track-title", CurrentSongLabel).label == track_name:
-                return
-            self.query_one("#track-title", CurrentSongLabel).update(track_name)
-            self.query_one("#track-artist", CurrentSongLabel).update(track_artist)
-            if(is_playing):
-                track_progress.start_progress_bar(progress_ms, duration_ms)
+
+            if self.query_one("#track-title", CurrentSongLabel).label != track_name:
+                self.query_one("#track-title", CurrentSongLabel).update(track_name)
+                self.query_one("#track-artist", CurrentSongLabel).update(track_artist)
+                if(is_playing):
+                    track_progress.start_progress_bar(progress_ms, duration_ms)
         else:
             self.query_one("#track-title", CurrentSongLabel).update("No track currently playing")
             self.query_one("#track-artist", CurrentSongLabel).update("")
