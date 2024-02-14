@@ -1,7 +1,7 @@
 from textual.widgets import Static, ProgressBar
 from textual.app import ComposeResult
 from textual.timer import Timer
-from widgets import CurrentSong, TrackProgress
+from tools.widgets import CurrentTrack, TrackProgress
 
 class PlayerControls(Static):
     # spacebar: play/pause current song
@@ -15,5 +15,5 @@ class PlayerControls(Static):
         super().__init__()
     
     def compose(self) -> ComposeResult:
-        yield CurrentSong()
+        yield CurrentTrack()
         yield TrackProgress()
