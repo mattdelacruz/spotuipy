@@ -1,5 +1,6 @@
 import os
 import spotipy
+import time
 from spotipy.oauth2 import SpotifyOAuth
 from tools.formatting import format_duration, format_artist_track
 from spotify_api.spotify_client import SpotifyClient
@@ -42,11 +43,14 @@ def load_tracks(tracks, track_table, playlist, track_info, track_uris, uri_list)
         unformatted_list_items.append((track_name, artist_name, album_name, duration))
         track_uris[uri][artist_name] = unique_track_name
         uri_list[playlist].append(uri)
+        
+        track_info[playlist][uri]['artist'] = artist_name
+        track_info[playlist][unique_track_name]['track_name'] = track_name
         track_info[playlist][unique_track_name]['uri'] = uri
         track_info[playlist][unique_track_name]['artist'] = artist_name
-        track_info[playlist][uri]['artist'] = artist_name
         track_info[playlist][unique_track_name]['duration_ms'] = duration_ms
         track_info[playlist][unique_track_name]['row_index'] = row_index
+
     return list_items, unformatted_list_items
 
 def find_active_device():
@@ -59,17 +63,34 @@ def find_active_device():
     else:
         return None
 
-def start_playback_on_active_device(track_uri, playlist_uri):
+
+def start_playback_on_active_device(track_uri: str, playlist_uri: str) -> int:
     device_id = find_active_device()
     if device_id:
         if device_id != -1:
             sp.transfer_playback(device_id, force_play=False)
-            sp.start_playback(device_id=device_id, uris=[track_uri], context_uri=playlist_uri)
-            return
-        sp.start_playback(uris=[track_uri])
+            sp.start_playback(device_id=device_id, uris=[track_uri])
+        else:
+            sp.start_playback(uris=[track_uri])
+        if wait_for_playback_to_start(track_uri):
+            return 1
+        else:
+            return 0
     else:
         print("No active device found.")
-        # load some error window saying 404 device not found and add instructions for user to run a Spotify daemon like spotifyd
+        return -1
+
+def wait_for_playback_to_start(expected_track_uri: str, timeout=30) -> bool:
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        current_playback = sp.current_playback()
+        if current_playback and current_playback.get('item') and current_playback['item']['uri'] == expected_track_uri:
+            print("Playback started successfully.")
+            return True
+        time.sleep(1)
+    print("Playback did not start within the expected timeout.")
+    return False
+
 
 def load_user_playlists(playlists):
     playlist_names = []

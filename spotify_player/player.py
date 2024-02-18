@@ -8,8 +8,8 @@ from collections import deque
 from tools.widgets import PlaylistLabel, TrackProgress
 from spotify_api.spotify_client import SpotifyClient
 
-sp = SpotifyClient.get_instance()
 finish_timer: Timer
+sp = SpotifyClient.get_instance()
 
 class PlaylistTrackQueue:
     def __init__(self):
@@ -22,6 +22,7 @@ class PlaylistTrackQueue:
 
     def next_track(self, playlist: str):
         if playlist in self.queues and len(self.queues[playlist]) > 0:
+            print('popping...')
             return self.queues[playlist].popleft()
         return None
 
@@ -83,7 +84,7 @@ class Player(Static):
         self.playlists = sp.current_user_playlists()
         self.playlist_names, self.playlist_ids = load_user_playlists(self.playlists)
         self.track_progress = self.app.query_one(TrackProgress)
-        self.finish_timer = self.set_interval(10, self.is_track_finished, pause=False)
+        self.finish_timer = self.set_interval(3, self.is_track_finished, pause=False)
         added_playlist_names = set()
 
         self.check_if_track_playing()
@@ -138,13 +139,12 @@ class Player(Static):
     def play_next_track(self) -> None:
         print('playing next track...')
         next_track_uri = self.track_queue.next_track(self.curr_playing_playlist)
-        print(next_track_uri)
         if next_track_uri is None:
             # check for next page
             print('next track uri is none!')
             return
             while self.action_scroll_down():
-                next_tracks = self.curr_displayed_tracks[self.curr_playing_playlist] #get the track of the first item in the list
+                next_tracks = self.curr_displayed_tracks[self.curr_playing_playlist] # get the track of the first item in the list
                 next_track_uri = next_tracks['items'][0]['track']['uri']
                 next_track_artist = next_tracks['items'][0]['track']['artists'][0]['name']
                 
@@ -174,7 +174,6 @@ class Player(Static):
     def check_if_track_playing(self) -> None:
         print('Checking if track is playing...')
         curr_playing_info = sp.currently_playing()
-        print(curr_playing_info)
         if curr_playing_info and curr_playing_info['context']:
             print('Context: ', curr_playing_info['context'])
             match curr_playing_info['context']['type']:
@@ -201,7 +200,6 @@ class Player(Static):
         curr_playing = sp.currently_playing()
 
         if not curr_playing or not curr_playing['is_playing']:
-            print("nothing is being played..")
             return
 
         playlist = self.curr_playing_playlist
@@ -286,6 +284,8 @@ class Player(Static):
         
         self.curr_track = unique_track_name
         self.curr_row_index = self.track_info[self.curr_playing_playlist][unique_track_name]['row_index']
+        track_name = self.track_info[self.curr_playing_playlist][unique_track_name]['track_name']
+
 
         self.create_queue()
         self.finish_timer.resume()

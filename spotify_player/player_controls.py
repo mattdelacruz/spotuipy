@@ -6,7 +6,6 @@ from tools.widgets import CurrentTrack, TrackProgress
 class PlayerControls(Static):
     # spacebar: play/pause current song
     BINDINGS = [
-        ("a", "start", "Start"),
     ]
 
     progress_timer: Timer
