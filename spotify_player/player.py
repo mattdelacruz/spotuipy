@@ -4,7 +4,7 @@ from textual.widgets import Static, ListView, DataTable
 from textual.containers import Horizontal
 from spotify_api.spotify_utils import load_tracks, load_user_playlists, start_playback_on_active_device
 from collections import deque
-from tools.widgets import PlaylistLabel, TrackProgress, CurrentTrack
+from tools.widgets import PlaylistLabel, TrackProgress
 from spotify_api.spotify_client import SpotifyClient
 
 SP = SpotifyClient.get_instance()
@@ -72,7 +72,6 @@ class Player(Static):
         self.playlists = None
         self.playlist_names = None
         self.playlist_ids = None
-        self.finish_timer = None
         self.tracks = None
 
     def compose(self) -> ComposeResult:
@@ -91,8 +90,6 @@ class Player(Static):
         self.playlist_names, self.playlist_ids = load_user_playlists(
             self.playlists)
         self.track_progress = self.app.query_one(TrackProgress)
-        self.finish_timer = self.set_interval(
-            3, self.is_track_finished, pause=False)
         added_playlist_names = set()
 
         self.check_if_track_playing()
@@ -141,36 +138,16 @@ class Player(Static):
         self.curr_displayed_tracks[playlist_name] = tracks
         return track_list, unformatted_track_list
 
-    def sync_now(self) -> None:
-        """Pull the real current-playback state from Spotify once and push it
-        into the live, mounted widget instances.
+    def on_track_ended(self, message) -> None:
+        """Auto-advance when the monitor reports the playing track ended.
 
-        This is the correct version of what the old start_playback_on_active_device
-        tried to do: the API layer stays UI-agnostic, and the Player (which holds
-        real references to the mounted widgets via self.app.query_one) drives the UI.
+        Only advance our own queue when the track that ended is the one we
+        believe we were playing; external (TV) changes that don't match our
+        queue state are left alone.
         """
-        track = SP.current_user_playing_track()
-        if not (track and track.get('item') and track.get('progress_ms', 0) > 0):
+        if self.curr_playing_playlist is None:
             return
-
-        track_name = track['item']['name']
-        track_artist = track['item']['artists'][0]['name']
-        duration_ms = track['item']['duration_ms']
-        progress_ms = track['progress_ms']
-
-        current_track = self.app.query_one(CurrentTrack)
-        track_progress = self.app.query_one(TrackProgress)
-
-        current_track.update_track_labels(track_name, track_artist)
-        if track_progress.is_active:
-            track_progress.update_progress_bar(progress_ms, duration_ms)
-        else:
-            track_progress.start_progress_bar(progress_ms, duration_ms)
-
-    def is_track_finished(self) -> None:
-        if self.track_progress.get_is_finished() and self.track_progress.track_switch:
-            self.track_progress.track_switch = False
-            self.play_next_track()
+        self.play_next_track()
 
     def play_next_track(self) -> None:
         next_track_uri = self.track_queue.next_track(
@@ -192,13 +169,10 @@ class Player(Static):
                     "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
                 start_playback_on_active_device(
                     next_track_uri, self.curr_playing_playist_uri)
-                self.sync_now()
-                self.finish_timer.resume()
                 return
             return
 
         else:
-            self.finish_timer.pause()
             return
 
         next_track_artist = self.track_info[self.curr_playing_playlist][next_track_uri]['artist']
@@ -206,12 +180,10 @@ class Player(Static):
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
         start_playback_on_active_device(
             next_track_uri, self.curr_playing_playist_uri)
-        self.sync_now()
 
         self.curr_track = self.track_uris[next_track_uri][next_track_artist]
         self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
         self.track_table.move_cursor(row=self.curr_row_index)
-        self.finish_timer.resume()
 
     def check_if_track_playing(self) -> None:
         curr_playing_info = SP.currently_playing()
@@ -233,7 +205,6 @@ class Player(Static):
                         self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
                         self.track_table.move_cursor(row=self.curr_row_index)
                         self.create_queue()
-                        self.finish_timer.resume()
                 case _:
                     return
 
@@ -301,11 +272,9 @@ class Player(Static):
         if currently_playing:
             if currently_playing['is_playing']:
                 SP.pause_playback()
-                self.finish_timer.pause()
                 self.track_progress.pause_progress_bar()
             else:
                 SP.start_playback()
-                self.finish_timer.resume()
                 self.track_progress.resume_progress_bar()
 
     @on(ListView.Selected, "#playlist-tabs")
@@ -324,13 +293,11 @@ class Player(Static):
 
         start_playback_on_active_device(
             track_uri, self.curr_playing_playist_uri)
-        self.sync_now()
 
         self.curr_track = unique_track_name
         self.curr_row_index = self.track_info[self.curr_playing_playlist][unique_track_name]['row_index']
         track_name = self.track_info[self.curr_playing_playlist][unique_track_name]['track_name']
 
         self.create_queue()
-        self.finish_timer.resume()
 
         self.track_table.move_cursor(row=self.curr_row_index)
