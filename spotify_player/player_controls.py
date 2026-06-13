@@ -2,7 +2,7 @@ from textual.widgets import Static, ProgressBar
 from textual.app import ComposeResult
 from textual.timer import Timer
 from textual.containers import Horizontal, Vertical
-from tools.widgets import CurrentTrack, TrackProgress, AlbumCover
+from tools.widgets import CurrentTrack, TrackProgress, AlbumCover, CurrentTrackLabel
 from textual_image.widget import Image as AlbumImage
 
 
@@ -22,3 +22,4 @@ class PlayerControls(Static):
             with Vertical():
                 yield CurrentTrack()
                 yield TrackProgress()
+        yield CurrentTrackLabel(label="", id="track-device")
