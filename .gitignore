@@ -4,3 +4,4 @@ venv/
 __pycache__/
 start_project.sh
 start_venv.sh
+node_modules/

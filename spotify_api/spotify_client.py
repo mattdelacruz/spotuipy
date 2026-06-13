@@ -4,9 +4,11 @@ from spotipy.oauth2 import SpotifyOAuth
 import os
 from dotenv import load_dotenv
 
+
 class SpotifyClient:
     _instance = None
     load_dotenv()
+
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
