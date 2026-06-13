@@ -80,8 +80,17 @@ TrackProgress ETAStatus {
   display: none;
 }
 TrackProgress Bar > .bar--indeterminate {
-  color: white
+  color: white;
 }
 TrackProgress Bar > .bar--bar {
-  color: white
+  color: white;
+}
+AlbumCover {
+    width: 20;
+    height: 10;
+    margin: 0 1 0 0;
+}
+#cover {
+    width: 100%;
+    height: 100%;
 }

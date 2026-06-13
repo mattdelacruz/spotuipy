@@ -1,7 +1,7 @@
 from textual.app import App, ComposeResult
 from spotify_player.player import Player
 from spotify_player.player_controls import PlayerControls
-from tools.widgets import PlaybackMonitor, CurrentTrack, TrackProgress
+from tools.widgets import PlaybackMonitor, CurrentTrack, TrackProgress, AlbumCover
 import logging
 logging.getLogger("spotipy").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -23,6 +23,8 @@ class Spotuify(App):
             CurrentTrack).on_playback_monitor_playback_changed(message)
         self.query_one(
             TrackProgress).on_playback_monitor_playback_changed(message)
+        self.query_one(
+            AlbumCover).on_playback_monitor_playback_changed(message)
 
     def on_playback_monitor_playback_stopped(
             self, message: PlaybackMonitor.PlaybackStopped) -> None:
@@ -30,6 +32,8 @@ class Spotuify(App):
             CurrentTrack).on_playback_monitor_playback_stopped(message)
         self.query_one(
             TrackProgress).on_playback_monitor_playback_stopped(message)
+        self.query_one(
+            AlbumCover).on_playback_monitor_playback_stopped(message)
 
     def on_playback_monitor_track_ended(
             self, message: PlaybackMonitor.TrackEnded) -> None:

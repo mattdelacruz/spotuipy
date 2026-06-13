@@ -1,3 +1,7 @@
+from textual_image.widget import Image as AlbumImage
+from PIL import Image as PILImage
+from io import BytesIO
+import requests
 import logging
 from textual.widgets import ListItem, Label, Static, ProgressBar
 from textual.app import ComposeResult
@@ -28,13 +32,14 @@ class PlaybackMonitor(Widget):
         """Posted every poll while a track is playing, with fresh ground truth."""
 
         def __init__(self, track_name: str, track_artist: str,
-                     progress_ms: int, duration_ms: int, track_uri: str) -> None:
+                     progress_ms: int, duration_ms: int, track_uri: str, art_url: str) -> None:
             super().__init__()
             self.track_name = track_name
             self.track_artist = track_artist
             self.progress_ms = progress_ms
             self.duration_ms = duration_ms
             self.track_uri = track_uri
+            self.art_url = art_url
 
     class TrackEnded(Message):
         """Posted when the playing track changes (the previous one ended)."""
@@ -79,14 +84,15 @@ class PlaybackMonitor(Widget):
             if self._last_uri:
                 self.post_message(self.TrackEnded(self._last_uri))
             self._last_uri = curr_uri
-
-        self._last_playing = True
+        images = item['album']['images']
+        art_url = images[0]['url'] if images else None
         self.post_message(self.PlaybackChanged(
             track_name=item['name'],
             track_artist=item['artists'][0]['name'],
             progress_ms=track['progress_ms'],
             duration_ms=item['duration_ms'],
             track_uri=curr_uri,
+            art_url=art_url,
         ))
 
 
@@ -244,3 +250,32 @@ class CurrentTrack(Static):
         self.query_one("#track-artist", CurrentTrackLabel).update("")
         self.track_name = None
         self.track_artist = None
+
+
+class AlbumCover(Static):
+    def compose(self) -> ComposeResult:
+        yield AlbumImage(id="cover")
+
+    def on_playback_monitor_playback_changed(self, message) -> None:
+        with open("/tmp/cover_debug.log", "a") as f:
+            f.write(f"[cover] art_url={message.art_url!r}\n")
+        if not message.art_url:
+            with open("/tmp/cover_debug.log", "a") as f:
+                f.write("[cover] no art_url, returning\n")
+            return
+        if getattr(self, "_last_art", None) == message.art_url:
+            return
+        self._last_art = message.art_url
+        try:
+            resp = requests.get(message.art_url, timeout=5)
+            pil = PILImage.open(BytesIO(resp.content))
+            self.query_one("#cover", AlbumImage).image = pil
+            with open("/tmp/cover_debug.log", "a") as f:
+                f.write(f"[cover] set image ok, size={pil.size}\n")
+        except Exception as e:
+            with open("/tmp/cover_debug.log", "a") as f:
+                f.write(f"[cover] ERROR: {e!r}\n")
+
+    def on_playback_monitor_playback_stopped(self, message) -> None:
+        self._last_art = None   # clear so next play refetches
+        self.query_one("#cover", AlbumImage).image = None
