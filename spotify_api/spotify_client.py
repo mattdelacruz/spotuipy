@@ -16,6 +16,6 @@ class SpotifyClient:
                 client_id=os.getenv("SPOTIFY_CLIENT_ID"),
                 client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
                 redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-                scope='playlist-read-private, playlist-read-collaborative, user-read-playback-state, user-modify-playback-state, user-read-currently-playing'
+                scope='playlist-read-private playlist-read-collaborative user-read-playback-state user-modify-playback-state user-read-currently-playing'
             ))
         return cls._instance

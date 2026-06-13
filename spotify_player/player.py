@@ -1,11 +1,10 @@
-from textual import events, on
+from textual import on
 from textual.app import ComposeResult
-from textual.widgets import Static, Label, ListView, ListItem, DataTable
+from textual.widgets import Static, ListView, DataTable
 from textual.containers import Horizontal
-from textual.timer import Timer
 from spotify_api.spotify_utils import load_tracks, load_user_playlists, start_playback_on_active_device
 from collections import deque
-from tools.widgets import PlaylistLabel, TrackProgress
+from tools.widgets import PlaylistLabel, TrackProgress, CurrentTrack
 from spotify_api.spotify_client import SpotifyClient
 
 SP = SpotifyClient.get_instance()
@@ -132,7 +131,7 @@ class Player(Static):
         self.tracks = results['tracks']
 
         track_list, unformatted_track_list = load_tracks(
-            self.tracks, self.track_table, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
+            self.tracks, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
         self.curr_displayed_tracks[playlist_name] = self.tracks
         return track_list, unformatted_track_list
 
@@ -140,10 +139,36 @@ class Player(Static):
         self.curr_displayed_playlist = playlist_name
 
         track_list, unformatted_track_list = load_tracks(
-            tracks, self.track_table, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
+            tracks, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
 
         self.curr_displayed_tracks[playlist_name] = tracks
         return track_list, unformatted_track_list
+
+    def sync_now(self) -> None:
+        """Pull the real current-playback state from Spotify once and push it
+        into the live, mounted widget instances.
+
+        This is the correct version of what the old start_playback_on_active_device
+        tried to do: the API layer stays UI-agnostic, and the Player (which holds
+        real references to the mounted widgets via self.app.query_one) drives the UI.
+        """
+        track = SP.current_user_playing_track()
+        if not (track and track.get('item') and track.get('progress_ms', 0) > 0):
+            return
+
+        track_name = track['item']['name']
+        track_artist = track['item']['artists'][0]['name']
+        duration_ms = track['item']['duration_ms']
+        progress_ms = track['progress_ms']
+
+        current_track = self.app.query_one(CurrentTrack)
+        track_progress = self.app.query_one(TrackProgress)
+
+        current_track.update_track_labels(track_name, track_artist)
+        if track_progress.is_active:
+            track_progress.update_progress_bar(progress_ms, duration_ms)
+        else:
+            track_progress.start_progress_bar(progress_ms, duration_ms)
 
     def is_track_finished(self) -> None:
         if self.track_progress.get_is_finished() and self.track_progress.track_switch:
@@ -171,6 +196,7 @@ class Player(Static):
                     "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
                 start_playback_on_active_device(
                     next_track_uri, self.curr_playing_playist_uri)
+                self.sync_now()
                 self.finish_timer.resume()
                 return
             print('next track uri is none!')
@@ -186,6 +212,7 @@ class Player(Static):
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
         start_playback_on_active_device(
             next_track_uri, self.curr_playing_playist_uri)
+        self.sync_now()
 
         self.curr_track = self.track_uris[next_track_uri][next_track_artist]
         self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
@@ -207,12 +234,16 @@ class Player(Static):
                     curr_track_uri = curr_playing_info['item']['uri']
                     curr_track_artist = curr_playing_info['item']['artists'][0]['name']
 
-                    self.curr_track = self.track_uris[curr_track_uri][curr_track_artist]
-                    self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
-                    self.track_table.move_cursor(row=self.curr_row_index)
-
-                    self.create_queue()
-                    self.finish_timer.resume()
+                    if curr_track_uri in self.track_uris and curr_track_artist in self.track_uris[curr_track_uri]:
+                        self.curr_track = self.track_uris[curr_track_uri][curr_track_artist]
+                        self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
+                        self.track_table.move_cursor(row=self.curr_row_index)
+                        self.create_queue()
+                        self.finish_timer.resume()
+                    else:
+                        # Currently-playing track isn't in the loaded page(s) yet; don't crash.
+                        print(
+                            f"Currently playing track {curr_track_uri} not in loaded tracks; skipping cursor sync.")
                 case _:
                     print("No track is currently playing...")
 
@@ -222,6 +253,8 @@ class Player(Static):
         if not curr_playing or not curr_playing['is_playing']:
             return
 
+        if not isinstance(self.curr_track, str) or self.curr_track not in self.track_info.get(self.curr_playing_playlist, {}):
+            return
         playlist = self.curr_playing_playlist
         curr_track_uri = self.track_info[self.curr_playing_playlist][self.curr_track]['uri']
         if curr_track_uri in self.track_queue.queues.get(playlist, []):
@@ -307,7 +340,8 @@ class Player(Static):
 
         print('playlist_uri: ', self.curr_playing_playist_uri)
         start_playback_on_active_device(
-            track_uri, self.curr_playing_playist_uri, artist_name, unique_track_name)
+            track_uri, self.curr_playing_playist_uri)
+        self.sync_now()
 
         self.curr_track = unique_track_name
         self.curr_row_index = self.track_info[self.curr_playing_playlist][unique_track_name]['row_index']
