@@ -21,7 +21,6 @@ class PlaylistTrackQueue:
 
     def next_track(self, playlist: str):
         if playlist in self.queues and len(self.queues[playlist]) > 0:
-            print('popping...')
             return self.queues[playlist].popleft()
         return None
 
@@ -103,9 +102,7 @@ class Player(Static):
                 self.playlist_list.append(PlaylistLabel(playlist))
                 added_playlist_names.add(playlist)
             else:
-                print(f"Duplicate playlist name '{playlist}' skipped.")
-
-        added_playlist_names = []
+                added_playlist_names = []
 
     def load_playlist_content(self, playlist_name) -> None:
         if playlist_name:
@@ -120,9 +117,9 @@ class Player(Static):
                 try:
                     self.track_table.add_row(*track_list_item, key=unique_key)
                 except Exception as e:
-                    print(f"Error adding row with key {unique_key}: {e}")
-
-            self.curr_displayed_playlist = playlist_name
+                    print(
+                        f"Error adding row for track {track_list_item[0]}: {e}")
+                self.curr_displayed_playlist = playlist_name
 
     def fetch_playlist_tracks(self, playlist_name: str):
         self.curr_displayed_playlist = playlist_name
@@ -176,7 +173,6 @@ class Player(Static):
             self.play_next_track()
 
     def play_next_track(self) -> None:
-        print('playing next track...')
         next_track_uri = self.track_queue.next_track(
             self.curr_playing_playlist)
         if next_track_uri is None:
@@ -199,11 +195,9 @@ class Player(Static):
                 self.sync_now()
                 self.finish_timer.resume()
                 return
-            print('next track uri is none!')
             return
 
         else:
-            print('No more tracks to play!')
             self.finish_timer.pause()
             return
 
@@ -240,12 +234,8 @@ class Player(Static):
                         self.track_table.move_cursor(row=self.curr_row_index)
                         self.create_queue()
                         self.finish_timer.resume()
-                    else:
-                        # Currently-playing track isn't in the loaded page(s) yet; don't crash.
-                        print(
-                            f"Currently playing track {curr_track_uri} not in loaded tracks; skipping cursor sync.")
                 case _:
-                    print("No track is currently playing...")
+                    return
 
     def create_queue(self) -> None:
         curr_playing = SP.currently_playing()
@@ -285,7 +275,6 @@ class Player(Static):
                 self.format_next_track_list(next_tracks)
                 return True
             else:
-                print("No next tracks")
                 return False
 
     def action_scroll_up(self) -> None:
@@ -298,8 +287,6 @@ class Player(Static):
                     0)
                 if self.prev_tracks:
                     self.format_next_track_list(self.prev_tracks)
-        else:
-            print("No previous tracks")
 
     def format_next_track_list(self, tracks) -> None:
         track_list, unformatted_track_list = self.fetch_next_playlist_tracks(
@@ -320,8 +307,6 @@ class Player(Static):
                 SP.start_playback()
                 self.finish_timer.resume()
                 self.track_progress.resume_progress_bar()
-        else:
-            print("No track currently playing!")
 
     @on(ListView.Selected, "#playlist-tabs")
     def playlist_selected(self, event: ListView.Selected) -> None:
@@ -334,11 +319,9 @@ class Player(Static):
         self.curr_playing_playlist = self.curr_displayed_playlist
         track_uri = self.track_info[self.curr_playing_playlist][unique_track_name]['uri']
         artist_name = self.track_info[self.curr_playing_playlist][unique_track_name]['artist']
-        print("playing track", unique_track_name)
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
 
-        print('playlist_uri: ', self.curr_playing_playist_uri)
         start_playback_on_active_device(
             track_uri, self.curr_playing_playist_uri)
         self.sync_now()

@@ -80,7 +80,6 @@ def start_playback_on_active_device(track_uri: str, playlist_uri: str) -> int:
         else:
             return 0
     else:
-        print("No active device found.")
         return -1
 
 
@@ -89,10 +88,8 @@ def wait_for_playback_to_start(expected_track_uri: str, timeout=30) -> bool:
     while time.time() - start_time < timeout:
         current_playback = sp.current_playback()
         if current_playback and current_playback.get('item') and current_playback['item']['uri'] == expected_track_uri:
-            print("Playback started successfully.")
             return True
         time.sleep(1)
-    print("Playback did not start within the expected timeout.")
     return False
 
 

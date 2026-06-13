@@ -1,3 +1,4 @@
+import logging
 import spotipy
 import time
 import threading
@@ -8,6 +9,11 @@ from textual.timer import Timer
 from spotify_api.spotify_client import SpotifyClient
 from tools.formatting import format_duration
 sp = SpotifyClient.get_instance()
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(message)s",
+)
 
 
 class PlaylistLabel(ListItem):
@@ -134,11 +140,6 @@ class TrackProgressTimeLabel(Label):
 class CurrentTrackLabel(Label):
     def __init__(self, label: str, id: str) -> None:
         super().__init__(label, id=id)
-        self.label = label
-
-    def update(self, new_label: str) -> None:
-        super().update(new_label)
-        self.label = new_label
 
 
 class CurrentTrack(Static):
@@ -151,20 +152,20 @@ class CurrentTrack(Static):
         yield CurrentTrackLabel(label="", id="track-title")
         yield CurrentTrackLabel(label="", id="track-artist")
 
-    # def on_mount(self) -> None:
-        # self.set_interval(3, self.update_current_track)
+    def on_mount(self) -> None:
+        self.set_interval(3, self.update_current_track)
 
     def update_current_track(self) -> None:
         track = sp.current_user_playing_track()
+        name = track['item']['name'] if track and track.get(
+            'item') else 'nothing'
         if track and track.get('item') and track['progress_ms'] > 0:
             track_name = track['item']['name']
             track_artist = track['item']['artists'][0]['name']
             duration_ms = track['item']['duration_ms']
             progress_ms = track['progress_ms']
             is_playing = track['is_playing']
-
             if is_playing:
-                print('currently playing...')
                 if self.should_update_track(track_name, track_artist):
                     self.update_track_labels(track_name, track_artist)
                 self.start_or_update_progress_bar(progress_ms, duration_ms)
@@ -172,17 +173,21 @@ class CurrentTrack(Static):
             self.display_no_current_track()
 
     def should_update_track(self, track_name, track_artist) -> bool:
-        return (self.query_one("#track-title", CurrentTrackLabel).label != track_name or
-                self.query_one("#track-artist", CurrentTrackLabel).label != track_artist)
+        return self.track_name != track_name or self.track_artist != track_artist
 
     def update_track_labels(self, track_name, track_artist):
-        self.query_one("#track-title", CurrentTrackLabel).update(track_name)
-        self.query_one("#track-artist", CurrentTrackLabel).update(track_artist)
+        title = self.app.query_one("#track-title", CurrentTrackLabel)
+        artist = self.app.query_one("#track-artist", CurrentTrackLabel)
+        title.update(track_name)
+        artist.update(track_artist)
+        title.refresh(layout=True)
+        artist.refresh(layout=True)
+        self.track_name = track_name
+        self.track_artist = track_artist
 
     def start_or_update_progress_bar(self, progress_ms, duration_ms):
         track_progress: TrackProgress = self.app.query_one(TrackProgress)
         if track_progress.is_active:
-            print('is active')
             track_progress.update_progress_bar(progress_ms, duration_ms)
         else:
             track_progress.start_progress_bar(progress_ms, duration_ms)
@@ -191,3 +196,6 @@ class CurrentTrack(Static):
         self.query_one(
             "#track-title", CurrentTrackLabel).update("No track currently playing")
         self.query_one("#track-artist", CurrentTrackLabel).update("")
+        track_progress = self.app.query_one(TrackProgress)
+        track_progress.pause_progress_bar()
+        track_progress.is_active = False
