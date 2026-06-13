@@ -121,6 +121,15 @@ class TrackProgress(Static):
         self.track_switch = True
         return self.is_finished
 
+    def reset_to_zero(self) -> None:
+        self.pause_progress_bar()
+        self.is_active = False
+        self.progress_ms = 0
+        self.total_time_ms = 0
+        self.query_one("#track_progress", ProgressBar).update(progress=0)
+        self.query_one("#track_progress_time_label", TrackProgressTimeLabel).update(
+            new_time_label=format_duration(0), duration_ms=0)
+
 
 class TrackProgressTimeLabel(Label):
     def __init__(self, label: str, id: str) -> None:
@@ -196,6 +205,4 @@ class CurrentTrack(Static):
         self.query_one(
             "#track-title", CurrentTrackLabel).update("No track currently playing")
         self.query_one("#track-artist", CurrentTrackLabel).update("")
-        track_progress = self.app.query_one(TrackProgress)
-        track_progress.pause_progress_bar()
-        track_progress.is_active = False
+        self.app.query_one(TrackProgress).reset_to_zero()
