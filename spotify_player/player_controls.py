@@ -6,8 +6,7 @@ from tools.widgets import CurrentTrack, TrackProgress, AlbumCover, CurrentTrackL
 
 class PlayerControls(Static):
     # spacebar: play/pause current song
-    BINDINGS = [
-    ]
+    BINDINGS = []
 
     def __init__(self):
         super().__init__()
