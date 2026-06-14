@@ -1,8 +1,11 @@
 import time
+import os
 from tools.formatting import format_duration, format_artist_track
 from spotify_api.spotify_client import SpotifyClient
 
 sp = SpotifyClient.get_instance()
+
+PREFFERED_DEVICE_NAME = os.getenv("SPOTIFYD_DEVICE_NAME", "spotifyd")
 
 
 def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
@@ -55,7 +58,8 @@ def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
     return list_items, unformatted_list_items
 
 
-def find_active_device(preferred_name="spotifyd"):
+def find_active_device(preferred_name=None):
+    preferred_name = preferred_name or PREFFERED_DEVICE_NAME
     devices = sp.devices()["devices"]
     print(f"Available devices: {[d['name'] for d in devices]}")
     if not devices:
