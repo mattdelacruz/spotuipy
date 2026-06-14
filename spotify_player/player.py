@@ -11,6 +11,7 @@ from spotify_api.spotify_utils import (
 from collections import deque
 from tools.widgets import PlaylistLabel, TrackProgress
 from tools.track import Track
+from spotify_player.seek_controller import SeekController
 from tools.playback_monitor import PlaybackMonitor
 from spotify_api.spotify_client import SpotifyClient
 
@@ -63,8 +64,6 @@ class Player(Static):
         ("left_square_bracket", "seek_backward", "Seek -10s"),
     ]
 
-    SEEK_INTERVAL_MS = 10000
-
     def __init__(self):
         super().__init__()
         self.track_queue = PlaylistTrackQueue()
@@ -87,8 +86,7 @@ class Player(Static):
         self.playlist_names = None
         self.playlist_ids = None
         self.tracks = None
-        self._seek_timer = None
-        self._pending_seek_ms = None
+        self.seek_controller = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -106,6 +104,7 @@ class Player(Static):
         self.playlist_names, self.playlist_ids = load_user_playlists(
             self.playlists)
         self.track_progress = self.app.query_one(TrackProgress)
+        self.seek_controller = SeekController(self, self.track_progress)
         added_playlist_names = set()
 
         for playlist in self.playlist_names:
@@ -412,14 +411,15 @@ class Player(Static):
             self.track_table.add_row(*track_list_item, key=unique_key)
 
     def key_space(self) -> None:
-        currently_playing = SP.currently_playing()
-        if currently_playing:
-            if currently_playing["is_playing"]:
-                SP.pause_playback()
-                self.track_progress.pause_progress_bar()
-            else:
-                SP.start_playback()
-                self.track_progress.resume_progress_bar()
+        # Read the monitor's last-known state instead of a blocking API call,
+        # so play/pause is instant. The pause/start commands still go to Spotify.
+        monitor = self.app.query_one(PlaybackMonitor)
+        if monitor.is_playing:
+            SP.pause_playback()
+            self.track_progress.pause_progress_bar()
+        else:
+            SP.start_playback()
+            self.track_progress.resume_progress_bar()
 
     @on(ListView.Selected, "#playlist-tabs")
     def playlist_selected(self, event: ListView.Selected) -> None:
@@ -450,34 +450,7 @@ class Player(Static):
         self.track_table.move_cursor(row=self.curr_row_index)
 
     def action_seek_forward(self) -> None:
-        self._seek_relative(self.SEEK_INTERVAL_MS)
+        self.seek_controller.seek_forward()
 
     def action_seek_backward(self) -> None:
-        self._seek_relative(-self.SEEK_INTERVAL_MS)
-
-    def _schedule_seek(self) -> None:
-        # Cancel any pending seek and restart the debounce window
-        if getattr(self, "_seek_timer", None) is not None:
-            self._seek_timer.stop()
-        self._seek_timer = self.set_timer(0.25, self._commit_seek)
-
-    def _commit_seek(self) -> None:
-        self._seek_timer = None
-        target = getattr(self, "_pending_seek_ms", None)
-        if target is None:
-            return
-        self._pending_seek_ms = None
-        self.run_worker(lambda: SP.seek_track(target),
-                        thread=True, exclusive=True)
-
-    def _seek_relative(self, delta_ms: int) -> None:
-        tp = self.track_progress
-        duration_ms = tp.total_time_ms
-        if duration_ms <= 0:
-            return
-        new_ms = max(0, min(tp.progress_ms + delta_ms, duration_ms - 1000))
-        tp.progress_ms = new_ms
-        tp.update_progress_bar(new_ms, duration_ms)
-        self.app.query_one(PlaybackMonitor).notify_seek()  # start guard now
-        self._pending_seek_ms = new_ms
-        self._schedule_seek()
+        self.seek_controller.seek_backward()

@@ -63,6 +63,13 @@ class PlaybackMonitor(Widget):
         self._seek_guard_until = 0.0
         self.set_interval(1, self.poll)
 
+    @property
+    def is_playing(self) -> bool:
+        """Last-known playing state from the most recent poll. Lets other
+        widgets check play/pause status without making their own blocking
+        API call."""
+        return self._last_playing
+
     def _ended_naturally(self) -> bool:
         """True if the last-seen track was near its end (within 3s), meaning it
         finished on its own rather than being skipped mid-track by the user."""
