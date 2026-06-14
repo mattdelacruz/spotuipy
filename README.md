@@ -63,7 +63,10 @@ In terminals without graphics support (e.g. plain xterm, rxvt-unicode), the rest
    SPOTIFY_CLIENT_ID=your_client_id
    SPOTIFY_CLIENT_SECRET=your_client_secret
    SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
+   SPOTIFYD_DEVICE_NAME=spotifyd
    ```
+
+   `SPOTIFYD_DEVICE_NAME` is optional and defaults to `spotifyd`. Set it to match the `device_name` in your `spotifyd.conf` if you've changed it, so Spotuipy targets the right device for local playback.
 
    The `.env` file is gitignored and should never be committed.
 
@@ -110,7 +113,7 @@ Spotuipy's device selection prefers a Connect device named `spotifyd`, so once t
    normalisation_pregain = -10
    ```
 
-   The `device_name` must be `spotifyd` to match Spotuipy's device preference. Adjust `backend` for your audio system (`alsa`, `pulseaudio`, etc.).
+   The `device_name` should match `SPOTIFYD_DEVICE_NAME` in your `.env` (both default to `spotifyd`). Adjust `backend` for your audio system (`alsa`, `pulseaudio`, etc.).
 
 3. Authenticate once via OAuth. Spotify has phased out username/password login, so spotifyd uses a browser-based flow that persists credentials under `cache_path`:
 
@@ -149,8 +152,9 @@ spotify_player/
   player.py                   Playlist/track browsing, queue, auto-advance
   player_controls.py          Now-playing controls layout
 tools/
-  widgets.py                  PlaybackMonitor and UI widgets
+  widgets.py                  UI widgets (now-playing display, progress bar, album art)
   formatting.py               Duration/text formatting helpers
+  playback_monitor.py         Polls Spotify and broadcasts playback states
 css/
   playlist.tcss               Textual styling
 ```

@@ -3,9 +3,14 @@ from textual import on
 from textual.app import ComposeResult
 from textual.widgets import Static, ListView, DataTable
 from textual.containers import Horizontal
-from spotify_api.spotify_utils import load_tracks, load_user_playlists, start_playback_on_active_device
+from spotify_api.spotify_utils import (
+    load_tracks,
+    load_user_playlists,
+    start_playback_on_active_device,
+)
 from collections import deque
-from tools.widgets import PlaylistLabel, TrackProgress, PlaybackMonitor
+from tools.widgets import PlaylistLabel, TrackProgress
+from tools.playback_monitor import PlaybackMonitor
 from spotify_api.spotify_client import SpotifyClient
 
 SP = SpotifyClient.get_instance()
@@ -40,7 +45,10 @@ class PlaylistTrackQueue:
             self.queues[playlist].clear()
 
     def remove_queue_at_track_uri(self, playlist: str, curr_track_uri: str):
-        while len(self.queues[playlist]) > 0 and self.queues[playlist][0] != curr_track_uri:
+        while (
+            len(self.queues[playlist]) > 0
+            and self.queues[playlist][0] != curr_track_uri
+        ):
             self.queues[playlist].popleft()
 
 
@@ -96,8 +104,7 @@ class Player(Static):
         self.playlist_list.border_title = "Playlists"
         self.track_table.border_title = "Tracks"
         self.playlists = SP.current_user_playlists()
-        self.playlist_names, self.playlist_ids = load_user_playlists(
-            self.playlists)
+        self.playlist_names, self.playlist_ids = load_user_playlists(self.playlists)
         self.track_progress = self.app.query_one(TrackProgress)
         added_playlist_names = set()
 
@@ -116,25 +123,35 @@ class Player(Static):
             self.track_table.clear()
 
             track_list, unformatted_track_list = self.fetch_playlist_tracks(
-                playlist_name)
+                playlist_name
+            )
 
-            for i, (track_list_item, unformatted_track_list_item) in enumerate(zip(track_list, unformatted_track_list)):
+            for i, (track_list_item, unformatted_track_list_item) in enumerate(
+                zip(track_list, unformatted_track_list)
+            ):
                 unique_key = f"{unformatted_track_list_item[0]}_{i}"
                 try:
                     self.track_table.add_row(*track_list_item, key=unique_key)
                 except Exception as e:
                     logging.warning(
-                        f"Error adding row for track {track_list_item[0]}: {e}")
+                        f"Error adding row for track {track_list_item[0]}: {e}"
+                    )
                 self.curr_displayed_playlist = playlist_name
 
     def fetch_playlist_tracks(self, playlist_name: str):
         self.curr_displayed_playlist = playlist_name
         results = SP.playlist(
-            self.playlist_ids[playlist_name], fields="tracks, next, items")
-        self.tracks = results['tracks']
+            self.playlist_ids[playlist_name], fields="tracks, next, items"
+        )
+        self.tracks = results["tracks"]
 
         track_list, unformatted_track_list = load_tracks(
-            self.tracks, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
+            self.tracks,
+            self.curr_displayed_playlist,
+            self.track_info,
+            self.track_uris,
+            self.uri_list,
+        )
         self.curr_displayed_tracks[playlist_name] = self.tracks
         return track_list, unformatted_track_list
 
@@ -142,7 +159,12 @@ class Player(Static):
         self.curr_displayed_playlist = playlist_name
 
         track_list, unformatted_track_list = load_tracks(
-            tracks, self.curr_displayed_playlist, self.track_info, self.track_uris, self.uri_list)
+            tracks,
+            self.curr_displayed_playlist,
+            self.track_info,
+            self.track_uris,
+            self.uri_list,
+        )
 
         self.curr_displayed_tracks[playlist_name] = tracks
         return track_list, unformatted_track_list
@@ -159,37 +181,46 @@ class Player(Static):
         self.play_next_track()
 
     def play_next_track(self) -> None:
-        next_track_uri = self.track_queue.next_track(
-            self.curr_playing_playlist)
+        next_track_uri = self.track_queue.next_track(self.curr_playing_playlist)
         if next_track_uri is None:
             # Queue empty: try to load the next page of the playlist
             while self.action_scroll_down():
                 next_tracks = self.curr_displayed_tracks[self.curr_playing_playlist]
-                next_track_uri = next_tracks['items'][0]['track']['uri']
-                next_track_artist = next_tracks['items'][0]['track']['artists'][0]['name']
+                next_track_uri = next_tracks["items"][0]["track"]["uri"]
+                next_track_artist = next_tracks["items"][0]["track"]["artists"][0][
+                    "name"
+                ]
 
                 self.curr_track = self.track_uris[next_track_uri][next_track_artist]
-                self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
+                self.curr_row_index = self.track_info[self.curr_playing_playlist][
+                    self.curr_track
+                ]["row_index"]
                 self.track_table.move_cursor(row=self.curr_row_index)
 
                 self.create_queue()
                 self.curr_playing_playist_uri = str(
-                    "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
+                    "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist]
+                )
                 start_playback_on_active_device(
-                    next_track_uri, self.curr_playing_playist_uri)
+                    next_track_uri, self.curr_playing_playist_uri
+                )
                 return
             # No more pages: nothing left to play
             return
 
         # Normal case: we have a next track in the queue — play it.
-        next_track_artist = self.track_info[self.curr_playing_playlist][next_track_uri]['artist']
+        next_track_artist = self.track_info[self.curr_playing_playlist][next_track_uri][
+            "artist"
+        ]
         self.curr_playing_playist_uri = str(
-            "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
-        start_playback_on_active_device(
-            next_track_uri, self.curr_playing_playist_uri)
+            "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist]
+        )
+        start_playback_on_active_device(next_track_uri, self.curr_playing_playist_uri)
 
         self.curr_track = self.track_uris[next_track_uri][next_track_artist]
-        self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
+        self.curr_row_index = self.track_info[self.curr_playing_playlist][
+            self.curr_track
+        ]["row_index"]
         self.track_table.move_cursor(row=self.curr_row_index)
 
     def action_next_track(self) -> None:
@@ -205,10 +236,12 @@ class Player(Static):
         playlist = self.curr_playing_playlist
         if playlist not in self.uri_list:
             return
-        if not isinstance(self.curr_track, str) or self.curr_track not in self.track_info.get(playlist, {}):
+        if not isinstance(
+            self.curr_track, str
+        ) or self.curr_track not in self.track_info.get(playlist, {}):
             return
 
-        curr_track_uri = self.track_info[playlist][self.curr_track]['uri']
+        curr_track_uri = self.track_info[playlist][self.curr_track]["uri"]
         keys_list = list(self.uri_list[playlist])
         try:
             curr_index = keys_list.index(curr_track_uri)
@@ -219,37 +252,43 @@ class Player(Static):
             return
 
         prev_track_uri = keys_list[curr_index - 1]
-        prev_track_artist = self.track_info[playlist][prev_track_uri]['artist']
+        prev_track_artist = self.track_info[playlist][prev_track_uri]["artist"]
 
         self.curr_playing_playist_uri = str(
-            "spotify:playlist:" + self.playlist_ids[playlist])
-        start_playback_on_active_device(
-            prev_track_uri, self.curr_playing_playist_uri)
+            "spotify:playlist:" + self.playlist_ids[playlist]
+        )
+        start_playback_on_active_device(prev_track_uri, self.curr_playing_playist_uri)
 
         self.curr_track = self.track_uris[prev_track_uri][prev_track_artist]
-        self.curr_row_index = self.track_info[playlist][self.curr_track]['row_index']
+        self.curr_row_index = self.track_info[playlist][self.curr_track]["row_index"]
         self.track_table.move_cursor(row=self.curr_row_index)
         # Rebuild the forward queue from the new position.
         self.create_queue()
 
     def check_if_track_playing(self) -> None:
         curr_playing_info = SP.currently_playing()
-        if curr_playing_info and curr_playing_info['context']:
-            match curr_playing_info['context']['type']:
-                case 'playlist':
-                    playlist_uri = curr_playing_info['context']['uri']
-                    playlist_id = playlist_uri.split(':')[-1]
-                    self.curr_playing_playlist = SP.playlist(
-                        playlist_id).get('name')
+        if curr_playing_info and curr_playing_info["context"]:
+            match curr_playing_info["context"]["type"]:
+                case "playlist":
+                    playlist_uri = curr_playing_info["context"]["uri"]
+                    playlist_id = playlist_uri.split(":")[-1]
+                    self.curr_playing_playlist = SP.playlist(playlist_id).get("name")
 
                     self.load_playlist_content(self.curr_playing_playlist)
 
-                    curr_track_uri = curr_playing_info['item']['uri']
-                    curr_track_artist = curr_playing_info['item']['artists'][0]['name']
+                    curr_track_uri = curr_playing_info["item"]["uri"]
+                    curr_track_artist = curr_playing_info["item"]["artists"][0]["name"]
 
-                    if curr_track_uri in self.track_uris and curr_track_artist in self.track_uris[curr_track_uri]:
-                        self.curr_track = self.track_uris[curr_track_uri][curr_track_artist]
-                        self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
+                    if (
+                        curr_track_uri in self.track_uris
+                        and curr_track_artist in self.track_uris[curr_track_uri]
+                    ):
+                        self.curr_track = self.track_uris[curr_track_uri][
+                            curr_track_artist
+                        ]
+                        self.curr_row_index = self.track_info[
+                            self.curr_playing_playlist
+                        ][self.curr_track]["row_index"]
                         self.track_table.move_cursor(row=self.curr_row_index)
                         self.create_queue()
                 case _:
@@ -258,65 +297,78 @@ class Player(Static):
     def create_queue(self) -> None:
         curr_playing = SP.currently_playing()
 
-        if not curr_playing or not curr_playing['is_playing']:
+        if not curr_playing or not curr_playing["is_playing"]:
             return
 
-        if not isinstance(self.curr_track, str) or self.curr_track not in self.track_info.get(self.curr_playing_playlist, {}):
+        if not isinstance(
+            self.curr_track, str
+        ) or self.curr_track not in self.track_info.get(self.curr_playing_playlist, {}):
             return
         playlist = self.curr_playing_playlist
-        curr_track_uri = self.track_info[self.curr_playing_playlist][self.curr_track]['uri']
+        curr_track_uri = self.track_info[self.curr_playing_playlist][self.curr_track][
+            "uri"
+        ]
         if curr_track_uri in self.track_queue.queues.get(playlist, []):
-            self.track_queue.remove_queue_at_track_uri(
-                playlist, curr_track_uri)
+            self.track_queue.remove_queue_at_track_uri(playlist, curr_track_uri)
         else:
             keys_list = list(self.uri_list[playlist])
             try:
                 curr_index = keys_list.index(curr_track_uri)
-                next_tracks = keys_list[curr_index + 1:]
+                next_tracks = keys_list[curr_index + 1 :]
                 self.track_queue.clear_queue(playlist)
                 self.track_queue.add_tracks(playlist, next_tracks)
             except ValueError:
                 self.track_queue.clear_queue(playlist)
 
     def action_scroll_down(self) -> bool:
-        if self.curr_displayed_playlist is not None and self.curr_displayed_tracks.get(self.curr_displayed_playlist) is not None:
+        if (
+            self.curr_displayed_playlist is not None
+            and self.curr_displayed_tracks.get(self.curr_displayed_playlist) is not None
+        ):
             curr_tracks = self.curr_displayed_tracks[self.curr_displayed_playlist]
             next_tracks = SP.next(curr_tracks)
 
             if next_tracks:
                 if self.curr_displayed_playlist not in self.prev_displayed_tracks:
-                    self.prev_displayed_tracks[self.curr_displayed_playlist] = [
-                    ]
+                    self.prev_displayed_tracks[self.curr_displayed_playlist] = []
 
                 self.prev_displayed_tracks[self.curr_displayed_playlist].append(
-                    curr_tracks)
+                    curr_tracks
+                )
                 self.format_next_track_list(next_tracks)
                 return True
             else:
                 return False
 
     def action_scroll_up(self) -> None:
-        if self.curr_displayed_playlist is not None and self.curr_displayed_tracks.get(self.curr_displayed_playlist) is not None:
+        if (
+            self.curr_displayed_playlist is not None
+            and self.curr_displayed_tracks.get(self.curr_displayed_playlist) is not None
+        ):
             if self.curr_displayed_playlist not in self.prev_displayed_tracks:
                 return
             if len(self.prev_displayed_tracks[self.curr_displayed_playlist]) > 0:
-                self.prev_tracks = self.prev_displayed_tracks[self.curr_displayed_playlist].pop(
-                    0)
+                self.prev_tracks = self.prev_displayed_tracks[
+                    self.curr_displayed_playlist
+                ].pop(0)
                 if self.prev_tracks:
                     self.format_next_track_list(self.prev_tracks)
 
     def format_next_track_list(self, tracks) -> None:
         track_list, unformatted_track_list = self.fetch_next_playlist_tracks(
-            self.curr_displayed_playlist, tracks)
+            self.curr_displayed_playlist, tracks
+        )
         self.track_table.clear()
-        for i, (track_list_item, unformatted_track_list_item) in enumerate(zip(track_list, unformatted_track_list)):
+        for i, (track_list_item, unformatted_track_list_item) in enumerate(
+            zip(track_list, unformatted_track_list)
+        ):
             unique_key = f"{unformatted_track_list_item[0]}_{i}"
             self.track_table.add_row(*track_list_item, key=unique_key)
 
     def key_space(self) -> None:
         currently_playing = SP.currently_playing()
         if currently_playing:
-            if currently_playing['is_playing']:
+            if currently_playing["is_playing"]:
                 SP.pause_playback()
                 self.track_progress.pause_progress_bar()
             else:
@@ -332,15 +384,19 @@ class Player(Static):
     def track_selected(self, event: DataTable.RowSelected) -> None:
         unique_track_name = event.row_key.value
         self.curr_playing_playlist = self.curr_displayed_playlist
-        track_uri = self.track_info[self.curr_playing_playlist][unique_track_name]['uri']
+        track_uri = self.track_info[self.curr_playing_playlist][unique_track_name][
+            "uri"
+        ]
         self.curr_playing_playist_uri = str(
-            "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
+            "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist]
+        )
 
-        start_playback_on_active_device(
-            track_uri, self.curr_playing_playist_uri)
+        start_playback_on_active_device(track_uri, self.curr_playing_playist_uri)
 
         self.curr_track = unique_track_name
-        self.curr_row_index = self.track_info[self.curr_playing_playlist][unique_track_name]['row_index']
+        self.curr_row_index = self.track_info[self.curr_playing_playlist][
+            unique_track_name
+        ]["row_index"]
 
         self.create_queue()
 
@@ -364,8 +420,7 @@ class Player(Static):
         if target is None:
             return
         self._pending_seek_ms = None
-        self.run_worker(lambda: SP.seek_track(target),
-                        thread=True, exclusive=True)
+        self.run_worker(lambda: SP.seek_track(target), thread=True, exclusive=True)
 
     def _seek_relative(self, delta_ms: int) -> None:
         tp = self.track_progress
@@ -375,6 +430,6 @@ class Player(Static):
         new_ms = max(0, min(tp.progress_ms + delta_ms, duration_ms - 1000))
         tp.progress_ms = new_ms
         tp.update_progress_bar(new_ms, duration_ms)
-        self.app.query_one(PlaybackMonitor).notify_seek()   # start guard now
+        self.app.query_one(PlaybackMonitor).notify_seek()  # start guard now
         self._pending_seek_ms = new_ms
         self._schedule_seek()
