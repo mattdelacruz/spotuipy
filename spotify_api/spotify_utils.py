@@ -1,17 +1,11 @@
-import os
-import spotipy
 import time
-from spotipy.oauth2 import SpotifyOAuth
 from tools.formatting import format_duration, format_artist_track
-from tools.widgets import CurrentTrack, TrackProgress
 from spotify_api.spotify_client import SpotifyClient
 
 sp = SpotifyClient.get_instance()
-currentTrack: CurrentTrack
-trackProgress: TrackProgress
 
 
-def load_tracks(tracks, track_table, playlist, track_info, track_uris, uri_list) -> list:
+def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
     list_items = []
     unformatted_list_items = []
     uri_list[playlist] = []
@@ -73,45 +67,19 @@ def find_active_device():
         return None
 
 
-def start_playback_on_active_device(track_uri: str, playlist_uri: str, track_artist: str, track_name: str) -> int:
+def start_playback_on_active_device(track_uri: str, playlist_uri: str) -> int:
     device_id = find_active_device()
     if device_id:
         if device_id != -1:
             sp.transfer_playback(device_id, force_play=False)
             sp.start_playback(device_id=device_id, uris=[track_uri])
-            track = sp.current_user_playing_track()
-            # need to grab the current object that is on the present screen, currently calling methods on an object that does not currently exist, works, but needs to fix this. This is so that there is only one interval that is running then entire time
-            if track and track.get('item') and track['progress_ms'] > 0:
-                track_name = track['item']['name']
-                track_artist = track['item']['artists'][0]['name']
-                duration_ms = track['item']['duration_ms']
-                progress_ms = track['progress_ms']
-                CurrentTrack.update_track_labels(
-                    CurrentTrack, track_name=track_name, track_artist=track_artist)
-                TrackProgress.start_progress_bar(
-                    TrackProgress, progress_ms=progress_ms, total_time_ms=duration_ms)
-            # start the progress bar here
-            # also update the track labels here
         else:
             sp.start_playback(uris=[track_uri])
-            track = sp.current_user_playing_track()
-            if track and track.get('item') and track['progress_ms'] > 0:
-                track_name = track['item']['name']
-                track_artist = track['item']['artists'][0]['name']
-                duration_ms = track['item']['duration_ms']
-                progress_ms = track['progress_ms']
-                CurrentTrack.update_track_labels(
-                    CurrentTrack, track_name=track_name, track_artist=track_artist)
-                TrackProgress.start_progress_bar(
-                    TrackProgress, progress_ms=progress_ms, total_time_ms=duration_ms)
-            # start the progress bar here
-            # also update the track labels here
         if wait_for_playback_to_start(track_uri):
             return 1
         else:
             return 0
     else:
-        print("No active device found.")
         return -1
 
 
@@ -120,10 +88,8 @@ def wait_for_playback_to_start(expected_track_uri: str, timeout=30) -> bool:
     while time.time() - start_time < timeout:
         current_playback = sp.current_playback()
         if current_playback and current_playback.get('item') and current_playback['item']['uri'] == expected_track_uri:
-            print("Playback started successfully.")
             return True
         time.sleep(1)
-    print("Playback did not start within the expected timeout.")
     return False
 
 

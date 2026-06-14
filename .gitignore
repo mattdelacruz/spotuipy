@@ -1,7 +1,94 @@
+# ---- Secrets / credentials (CRITICAL - never commit) ----
 .env
+.env.*
+!.env.example
 .cache
-venv/
+.cache-*
+*.cache
+
+# ---- Python ----
 __pycache__/
-start_project.sh
-start_venv.sh
-node_modules/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ---- Type checkers / linters ----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# ---- Jupyter / IPython ----
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# ---- Editors / IDEs ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.spyderproject
+.spyproject
+
+# ---- OS files ----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Textual ----
+.textual/

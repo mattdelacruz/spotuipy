@@ -1,13 +1,106 @@
-import spotipy
-import time
-import threading
+from textual import work
+from textual_image.widget import Image as AlbumImage
+from PIL import Image as PILImage
+from io import BytesIO
+import requests
+import logging
 from textual.widgets import ListItem, Label, Static, ProgressBar
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.timer import Timer
+from textual.message import Message
+from textual.widget import Widget
 from spotify_api.spotify_client import SpotifyClient
 from tools.formatting import format_duration
 sp = SpotifyClient.get_instance()
+
+logging.getLogger("spotipy").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+class PlaybackMonitor(Widget):
+    """Single source of truth for playback state.
+
+    Polls Spotify once per second, diffs against the last seen state, and posts
+    messages when something changes. It is the ONLY thing that calls the
+    playback API on a timer; every other widget reacts to these messages instead
+    of polling on its own. The widget renders nothing.
+    """
+
+    DEFAULT_CSS = "PlaybackMonitor { display: none; }"
+
+    class PlaybackChanged(Message):
+        """Posted every poll while a track is playing, with fresh ground truth."""
+
+        def __init__(self, track_name: str, track_artist: str,
+                     progress_ms: int, duration_ms: int, track_uri: str, art_url: str,
+                     device_name: str = None) -> None:
+            super().__init__()
+            self.track_name = track_name
+            self.track_artist = track_artist
+            self.progress_ms = progress_ms
+            self.duration_ms = duration_ms
+            self.track_uri = track_uri
+            self.art_url = art_url
+            self.device_name = device_name
+
+    class TrackEnded(Message):
+        """Posted when the playing track changes (the previous one ended)."""
+
+        def __init__(self, ended_uri: str) -> None:
+            super().__init__()
+            self.ended_uri = ended_uri
+
+    class PlaybackStopped(Message):
+        """Posted when nothing is playing anymore."""
+
+    def on_mount(self) -> None:
+        self._last_uri = None
+        self._last_playing = False
+        self.set_interval(1, self.poll)
+
+    def poll(self) -> None:
+        try:
+            track = sp.current_playback()
+        except Exception:
+            # transient network/API error: keep last known state, try next tick
+            return
+
+        playing = bool(track and track.get('is_playing')
+                       and track.get('item') and track.get('progress_ms', 0) > 0)
+
+        if not playing:
+            # transition from playing -> stopped
+            if self._last_playing:
+                self._last_playing = False
+                if self._last_uri:
+                    self.post_message(self.TrackEnded(self._last_uri))
+                self._last_uri = None
+                self.post_message(self.PlaybackStopped())
+            return
+
+        item = track['item']
+        curr_uri = item['uri']
+
+        # track changed (including coming back from stopped): previous one ended
+        if curr_uri != self._last_uri:
+            if self._last_uri:
+                self.post_message(self.TrackEnded(self._last_uri))
+            self._last_uri = curr_uri
+        images = item['album']['images']
+        art_url = images[0]['url'] if images else None
+        device = track.get('device') or {}
+        device_name = device.get('name')
+        self._last_playing = True
+        self.post_message(self.PlaybackChanged(
+            track_name=item['name'],
+            track_artist=item['artists'][0]['name'],
+            progress_ms=track['progress_ms'],
+            duration_ms=item['duration_ms'],
+            track_uri=curr_uri,
+            art_url=art_url,
+            device_name=device_name,
+        ))
 
 
 class PlaylistLabel(ListItem):
@@ -21,7 +114,6 @@ class PlaylistLabel(ListItem):
 
 class TrackProgress(Static):
     progress_timer: Timer
-    progress_correction_timer: Timer
 
     def __init__(self):
         super().__init__()
@@ -29,7 +121,6 @@ class TrackProgress(Static):
         self.progress_ms = 0
         self.is_finished = False
         self.is_active = False
-        self.track_switch = False
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -41,30 +132,22 @@ class TrackProgress(Static):
     def on_mount(self) -> None:
         self.progress_timer = self.set_interval(
             1/10, self.make_progress, pause=True)
-        self.progress_correction_timer = self.set_interval(
-            1/5, self.correct_progress, pause=True)
 
-    def correct_progress(self) -> None:
-        track = sp.current_user_playing_track()
-        if track and track.get('item') and track['progress_ms'] > 0:
-            progress_ms = track['progress_ms']
-            is_playing = track['is_playing']
-            if is_playing:
-                if progress_ms != self.progress_ms:
-                    print('correcting...')
-                    self.progress_ms = progress_ms
-                    self.query_one("#track_progress", ProgressBar).update(
-                        progress=self.progress_ms)
-                    self.query_one("#track_progress_time_label", TrackProgressTimeLabel).update(
-                        new_time_label=format_duration(self.progress_ms), duration_ms=self.progress_ms)
-            else:
-                self.pause_progress_bar()
+    def on_playback_monitor_playback_changed(self, message) -> None:
+        """Snap to ground truth from the monitor's poll, then keep ticking locally."""
+        if self.is_active:
+            self.update_progress_bar(message.progress_ms, message.duration_ms)
+            # correct the local counter so the 100ms ticker can't drift
+            self.progress_ms = message.progress_ms
+            self.total_time_ms = message.duration_ms
+        else:
+            self.start_progress_bar(message.progress_ms, message.duration_ms)
+
+    def on_playback_monitor_playback_stopped(self, message) -> None:
+        self.reset_to_zero()
 
     def make_progress(self) -> None:
-        print('progress_ms', self.progress_ms)
-        print('total time ms', self.total_time_ms)
         if self.progress_ms >= self.total_time_ms:
-            print('track is finished!')
             self.pause_progress_bar()
             self.is_finished = True
             self.is_active = False
@@ -99,21 +182,23 @@ class TrackProgress(Static):
 
     def pause_progress_bar(self) -> None:
         self.progress_timer.pause()
-        self.progress_correction_timer.pause()
 
     def resume_progress_bar(self) -> None:
         self.progress_timer.resume()
-        self.progress_correction_timer.resume()
 
     def reset_progress_bar(self) -> None:
         self.progress_timer.reset()
-        self.progress_correction_timer.reset()
         self.query_one("#track_progress_time_label", TrackProgressTimeLabel).update(
             new_time_label=format_duration(0), duration_ms=0)
 
-    def get_is_finished(self) -> bool:
-        self.track_switch = True
-        return self.is_finished
+    def reset_to_zero(self) -> None:
+        self.pause_progress_bar()
+        self.is_active = False
+        self.progress_ms = 0
+        self.total_time_ms = 0
+        self.query_one("#track_progress", ProgressBar).update(progress=0)
+        self.query_one("#track_progress_time_label", TrackProgressTimeLabel).update(
+            new_time_label=format_duration(0), duration_ms=0)
 
 
 class TrackProgressTimeLabel(Label):
@@ -134,11 +219,6 @@ class TrackProgressTimeLabel(Label):
 class CurrentTrackLabel(Label):
     def __init__(self, label: str, id: str) -> None:
         super().__init__(label, id=id)
-        self.label = label
-
-    def update(self, new_label: str) -> None:
-        super().update(new_label)
-        self.label = new_label
 
 
 class CurrentTrack(Static):
@@ -151,43 +231,66 @@ class CurrentTrack(Static):
         yield CurrentTrackLabel(label="", id="track-title")
         yield CurrentTrackLabel(label="", id="track-artist")
 
-    # def on_mount(self) -> None:
-        # self.set_interval(3, self.update_current_track)
+    def on_playback_monitor_playback_changed(self, message) -> None:
+        if self.should_update_track(message.track_name, message.track_artist):
+            self.update_track_labels(message.track_name, message.track_artist)
+        device_label = self.app.query_one("#track-device", CurrentTrackLabel)
+        device_label.update(
+            f"Playing from {message.device_name}" if message.device_name else "")
+        device_label.refresh(layout=True)
 
-    def update_current_track(self) -> None:
-        track = sp.current_user_playing_track()
-        if track and track.get('item') and track['progress_ms'] > 0:
-            track_name = track['item']['name']
-            track_artist = track['item']['artists'][0]['name']
-            duration_ms = track['item']['duration_ms']
-            progress_ms = track['progress_ms']
-            is_playing = track['is_playing']
-
-            if is_playing:
-                print('currently playing...')
-                if self.should_update_track(track_name, track_artist):
-                    self.update_track_labels(track_name, track_artist)
-                self.start_or_update_progress_bar(progress_ms, duration_ms)
-        else:
-            self.display_no_current_track()
+    def on_playback_monitor_playback_stopped(self, message) -> None:
+        self.display_no_current_track()
 
     def should_update_track(self, track_name, track_artist) -> bool:
-        return (self.query_one("#track-title", CurrentTrackLabel).label != track_name or
-                self.query_one("#track-artist", CurrentTrackLabel).label != track_artist)
+        return self.track_name != track_name or self.track_artist != track_artist
 
     def update_track_labels(self, track_name, track_artist):
-        self.query_one("#track-title", CurrentTrackLabel).update(track_name)
-        self.query_one("#track-artist", CurrentTrackLabel).update(track_artist)
-
-    def start_or_update_progress_bar(self, progress_ms, duration_ms):
-        track_progress: TrackProgress = self.app.query_one(TrackProgress)
-        if track_progress.is_active:
-            print('is active')
-            track_progress.update_progress_bar(progress_ms, duration_ms)
-        else:
-            track_progress.start_progress_bar(progress_ms, duration_ms)
+        title = self.app.query_one("#track-title", CurrentTrackLabel)
+        artist = self.app.query_one("#track-artist", CurrentTrackLabel)
+        title.update(track_name)
+        artist.update(track_artist)
+        title.refresh(layout=True)
+        artist.refresh(layout=True)
+        self.track_name = track_name
+        self.track_artist = track_artist
 
     def display_no_current_track(self):
         self.query_one(
             "#track-title", CurrentTrackLabel).update("No track currently playing")
         self.query_one("#track-artist", CurrentTrackLabel).update("")
+        self.app.query_one("#track-device", CurrentTrackLabel).update("")
+        self.track_name = None
+        self.track_artist = None
+
+
+class AlbumCover(Static):
+    def __init__(self):
+        super().__init__()
+        self._last_art = None
+
+    def compose(self) -> ComposeResult:
+        yield AlbumImage(id="cover")
+
+    def on_playback_monitor_playback_changed(self, message) -> None:
+        if not message.art_url:
+            return
+        self._last_art = message.art_url
+        self.load_cover(message.art_url)
+
+    @work(thread=True, exclusive=True)
+    def load_cover(self, url: str) -> None:
+        try:
+            resp = requests.get(url, timeout=5)
+            pil = PILImage.open(BytesIO(resp.content))
+        except Exception:
+            return
+        # Setting the widget property must happen on the UI thread:
+        self.app.call_from_thread(self._set_image, pil)
+
+    def _set_image(self, pil) -> None:
+        self.query_one("#cover", AlbumImage).image = pil
+
+    def on_playback_monitor_playback_stopped(self, message) -> None:
+        self._last_art = None
+        self.query_one("#cover", AlbumImage).image = None
