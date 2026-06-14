@@ -1,3 +1,4 @@
+import logging
 from textual import on
 from textual.app import ComposeResult
 from textual.widgets import Static, ListView, DataTable
@@ -114,7 +115,7 @@ class Player(Static):
                 try:
                     self.track_table.add_row(*track_list_item, key=unique_key)
                 except Exception as e:
-                    print(
+                    logging.warning(
                         f"Error adding row for track {track_list_item[0]}: {e}")
                 self.curr_displayed_playlist = playlist_name
 

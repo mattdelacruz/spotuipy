@@ -275,8 +275,6 @@ class AlbumCover(Static):
     def on_playback_monitor_playback_changed(self, message) -> None:
         if not message.art_url:
             return
-        if getattr(self, "_last_art", None) == message.art_url:
-            return
         self._last_art = message.art_url
         self.load_cover(message.art_url)
 
