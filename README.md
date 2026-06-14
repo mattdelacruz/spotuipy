@@ -85,6 +85,8 @@ On first launch a browser window opens for Spotify authorization. After you appr
 | `Space`          | Play / pause                        |
 | `Ctrl+D`         | Scroll down (next page of tracks)   |
 | `Ctrl+U`         | Scroll up (previous page of tracks) |
+| `N`              | Play next track                     |
+| `P`              | Play previous track                 |
 
 ## Local playback with spotifyd
 
