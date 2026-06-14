@@ -5,7 +5,7 @@ from textual.widgets import Static, ListView, DataTable
 from textual.containers import Horizontal
 from spotify_api.spotify_utils import load_tracks, load_user_playlists, start_playback_on_active_device
 from collections import deque
-from tools.widgets import PlaylistLabel, TrackProgress
+from tools.widgets import PlaylistLabel, TrackProgress, PlaybackMonitor
 from spotify_api.spotify_client import SpotifyClient
 
 SP = SpotifyClient.get_instance()
@@ -50,7 +50,11 @@ class Player(Static):
         ("ctrl+u", "scroll_up", "Scroll Up"),
         ("n", "next_track", "Next Track"),
         ("p", "previous_track", "Previous Track"),
+        ("right_square_bracket", "seek_forward", "Seek +10s"),
+        ("left_square_bracket", "seek_backward", "Seek -10s"),
     ]
+
+    SEEK_INTERVAL_MS = 10000
 
     def __init__(self):
         super().__init__()
@@ -76,6 +80,8 @@ class Player(Static):
         self.playlist_names = None
         self.playlist_ids = None
         self.tracks = None
+        self._seek_timer = None
+        self._pending_seek_ms = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -293,7 +299,6 @@ class Player(Static):
         if self.curr_displayed_playlist is not None and self.curr_displayed_tracks.get(self.curr_displayed_playlist) is not None:
             if self.curr_displayed_playlist not in self.prev_displayed_tracks:
                 return
-            curr_tracks = self.curr_displayed_tracks[self.curr_displayed_playlist]
             if len(self.prev_displayed_tracks[self.curr_displayed_playlist]) > 0:
                 self.prev_tracks = self.prev_displayed_tracks[self.curr_displayed_playlist].pop(
                     0)
@@ -328,7 +333,6 @@ class Player(Static):
         unique_track_name = event.row_key.value
         self.curr_playing_playlist = self.curr_displayed_playlist
         track_uri = self.track_info[self.curr_playing_playlist][unique_track_name]['uri']
-        artist_name = self.track_info[self.curr_playing_playlist][unique_track_name]['artist']
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
 
@@ -337,8 +341,40 @@ class Player(Static):
 
         self.curr_track = unique_track_name
         self.curr_row_index = self.track_info[self.curr_playing_playlist][unique_track_name]['row_index']
-        track_name = self.track_info[self.curr_playing_playlist][unique_track_name]['track_name']
 
         self.create_queue()
 
         self.track_table.move_cursor(row=self.curr_row_index)
+
+    def action_seek_forward(self) -> None:
+        self._seek_relative(self.SEEK_INTERVAL_MS)
+
+    def action_seek_backward(self) -> None:
+        self._seek_relative(-self.SEEK_INTERVAL_MS)
+
+    def _schedule_seek(self) -> None:
+        # Cancel any pending seek and restart the debounce window
+        if getattr(self, "_seek_timer", None) is not None:
+            self._seek_timer.stop()
+        self._seek_timer = self.set_timer(0.25, self._commit_seek)
+
+    def _commit_seek(self) -> None:
+        self._seek_timer = None
+        target = getattr(self, "_pending_seek_ms", None)
+        if target is None:
+            return
+        self._pending_seek_ms = None
+        self.run_worker(lambda: SP.seek_track(target),
+                        thread=True, exclusive=True)
+
+    def _seek_relative(self, delta_ms: int) -> None:
+        tp = self.track_progress
+        duration_ms = tp.total_time_ms
+        if duration_ms <= 0:
+            return
+        new_ms = max(0, min(tp.progress_ms + delta_ms, duration_ms - 1000))
+        tp.progress_ms = new_ms
+        tp.update_progress_bar(new_ms, duration_ms)
+        self.app.query_one(PlaybackMonitor).notify_seek()   # start guard now
+        self._pending_seek_ms = new_ms
+        self._schedule_seek()

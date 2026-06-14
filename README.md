@@ -87,6 +87,8 @@ On first launch a browser window opens for Spotify authorization. After you appr
 | `Ctrl+U`         | Scroll up (previous page of tracks) |
 | `N`              | Play next track                     |
 | `P`              | Play previous track                 |
+| `[`              | Seek 10 seconds backward            |
+| `]`              | Seek 10 seconds forward             |
 
 ## Local playback with spotifyd
 
