@@ -103,11 +103,10 @@ class Player(Static):
         self.playlist_list.border_title = "Playlists"
         self.track_table.border_title = "Tracks"
         self.playlists = SP.current_user_playlists()
-        self.playlist_names, self.playlist_ids = load_user_playlists(self.playlists)
+        self.playlist_names, self.playlist_ids = load_user_playlists(
+            self.playlists)
         self.track_progress = self.app.query_one(TrackProgress)
         added_playlist_names = set()
-
-        self.check_if_track_playing()
 
         for playlist in self.playlist_names:
             if playlist not in added_playlist_names:
@@ -115,6 +114,12 @@ class Player(Static):
                 added_playlist_names.add(playlist)
             else:
                 added_playlist_names = []
+
+        # Sync to any already-playing track AFTER the UI has mounted, as a
+        # background worker, so the initial render isn't blocked by the chain
+        # of Spotify API calls (and the page-seeking loop) this performs.
+        self.run_worker(self.check_if_track_playing,
+                        thread=True, exclusive=True)
 
     def load_playlist_content(self, playlist_name) -> None:
         if playlist_name:
@@ -211,7 +216,8 @@ class Player(Static):
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[playlist]
         )
-        start_playback_on_active_device(next_track_uri, self.curr_playing_playist_uri)
+        start_playback_on_active_device(
+            next_track_uri, self.curr_playing_playist_uri)
 
         self.curr_track = track
         self.curr_row_index = track.row_index
@@ -244,7 +250,8 @@ class Player(Static):
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[playlist]
         )
-        start_playback_on_active_device(prev_track.uri, self.curr_playing_playist_uri)
+        start_playback_on_active_device(
+            prev_track.uri, self.curr_playing_playist_uri)
 
         self.curr_track = prev_track
         self.curr_row_index = prev_track.row_index
@@ -253,27 +260,84 @@ class Player(Static):
         self.create_queue()
 
     def check_if_track_playing(self) -> None:
-        curr_playing_info = SP.currently_playing()
-        if curr_playing_info and curr_playing_info["context"]:
-            match curr_playing_info["context"]["type"]:
-                case "playlist":
-                    playlist_uri = curr_playing_info["context"]["uri"]
-                    playlist_id = playlist_uri.split(":")[-1]
-                    self.curr_playing_playlist = SP.playlist(playlist_id).get("name")
+        # NOTE: runs on a worker thread (see on_mount). The blocking SP.* reads
+        # are fine here, but anything that touches widgets must be marshalled
+        # back onto the UI thread via self.app.call_from_thread.
+        # current_playback() carries context more reliably than
+        # currently_playing(), especially for auto-continued playback.
+        info = SP.current_playback()
+        if not info or not info.get("item"):
+            return
 
-                    self.load_playlist_content(self.curr_playing_playlist)
+        context = info.get("context")
+        if context and context.get("type") == "playlist":
+            # Fast path: Spotify told us which playlist is playing.
+            playlist_id = context["uri"].split(":")[-1]
+            playlist_name = SP.playlist(playlist_id).get("name")
+            self._sync_to_playlist(playlist_name, info["item"]["uri"])
+            return
 
-                    curr_track_uri = curr_playing_info["item"]["uri"]
+        # No playlist context (common when a track auto-continues). Fall back to
+        # searching the user's playlists for the playing track's URI.
+        self._sync_without_context(info["item"]["uri"])
 
-                    pt = self.playlist_tracks.get(self.curr_playing_playlist)
-                    track = pt.by_uri(curr_track_uri) if pt else None
-                    if track is not None:
-                        self.curr_track = track
-                        self.curr_row_index = track.row_index
-                        self.track_table.move_cursor(row=self.curr_row_index)
-                        self.create_queue()
-                case _:
-                    return
+    def _sync_to_playlist(self, playlist_name, track_uri) -> None:
+        """Load a known playlist, page to the track, and highlight both panes."""
+        if not playlist_name:
+            return
+        self.curr_playing_playlist = playlist_name
+
+        self.app.call_from_thread(self.load_playlist_content, playlist_name)
+
+        if playlist_name in self.playlist_names:
+            playlist_index = self.playlist_names.index(playlist_name)
+            self.app.call_from_thread(
+                self._set_playlist_cursor, playlist_index)
+
+        track = self._find_loaded_track(track_uri)
+        while track is None and self.app.call_from_thread(self.action_scroll_down):
+            track = self._find_loaded_track(track_uri)
+
+        if track is not None:
+            self.curr_track = track
+            self.curr_row_index = track.row_index
+            self.app.call_from_thread(
+                self.track_table.move_cursor, row=self.curr_row_index)
+            self.app.call_from_thread(self.track_table.focus)
+            self.create_queue()
+
+    def _sync_without_context(self, track_uri) -> None:
+        """No playlist context from Spotify: search the user's playlists for the
+        playing track and sync to the first one that contains it."""
+        for playlist_name in self.playlist_names or []:
+            playlist_id = self.playlist_ids[playlist_name]
+            try:
+                results = SP.playlist(
+                    playlist_id, fields="tracks.items.track.uri")
+            except Exception:
+                continue
+            uris = [
+                item["track"]["uri"]
+                for item in results.get("tracks", {}).get("items", [])
+                if item.get("track")
+            ]
+            if track_uri in uris:
+                self._sync_to_playlist(playlist_name, track_uri)
+                return
+        # Not found in any playlist's first page — leave UI as-is rather than
+        # showing a stale highlight.
+
+    def _find_loaded_track(self, uri):
+        """Look up a track by URI in the currently loaded page, or None."""
+        pt = self.playlist_tracks.get(self.curr_playing_playlist)
+        return pt.by_uri(uri) if pt else None
+
+    def _set_playlist_cursor(self, index: int) -> None:
+        """Move the playlist-list highlight to the given index (UI thread)."""
+        try:
+            self.playlist_list.index = index
+        except Exception:
+            pass
 
     def create_queue(self) -> None:
         curr_playing = SP.currently_playing()
@@ -289,12 +353,13 @@ class Player(Static):
             return
         curr_track_uri = self.curr_track.uri
         if curr_track_uri in self.track_queue.queues.get(playlist, []):
-            self.track_queue.remove_queue_at_track_uri(playlist, curr_track_uri)
+            self.track_queue.remove_queue_at_track_uri(
+                playlist, curr_track_uri)
         else:
             keys_list = pt.uris()
             try:
                 curr_index = keys_list.index(curr_track_uri)
-                next_tracks = keys_list[curr_index + 1 :]
+                next_tracks = keys_list[curr_index + 1:]
                 self.track_queue.clear_queue(playlist)
                 self.track_queue.add_tracks(playlist, next_tracks)
             except ValueError:
@@ -310,7 +375,8 @@ class Player(Static):
 
             if next_tracks:
                 if self.curr_displayed_playlist not in self.prev_displayed_tracks:
-                    self.prev_displayed_tracks[self.curr_displayed_playlist] = []
+                    self.prev_displayed_tracks[self.curr_displayed_playlist] = [
+                    ]
 
                 self.prev_displayed_tracks[self.curr_displayed_playlist].append(
                     curr_tracks
@@ -373,7 +439,8 @@ class Player(Static):
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist]
         )
 
-        start_playback_on_active_device(track_uri, self.curr_playing_playist_uri)
+        start_playback_on_active_device(
+            track_uri, self.curr_playing_playist_uri)
 
         self.curr_track = track
         self.curr_row_index = track.row_index
@@ -400,7 +467,8 @@ class Player(Static):
         if target is None:
             return
         self._pending_seek_ms = None
-        self.run_worker(lambda: SP.seek_track(target), thread=True, exclusive=True)
+        self.run_worker(lambda: SP.seek_track(target),
+                        thread=True, exclusive=True)
 
     def _seek_relative(self, delta_ms: int) -> None:
         tp = self.track_progress
