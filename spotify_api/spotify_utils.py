@@ -55,23 +55,30 @@ def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
     return list_items, unformatted_list_items
 
 
-def find_active_device():
+def find_active_device(preferred_name="spotifyd"):
     devices = sp.devices()["devices"]
-    speaker_device = next(
-        (device for device in devices if device["type"] == "Speaker"), None)
-    if speaker_device:
-        if speaker_device['is_active']:
-            return -1
-        return speaker_device["id"]
-    else:
+    print(f"Available devices: {[d['name'] for d in devices]}")
+    if not devices:
         return None
+    # 1. Prefer our local daemon by name, if present
+    preferred = next(
+        (d for d in devices if d.get("name") == preferred_name), None)
+    if preferred:
+        return -1 if preferred.get("is_active") else preferred["id"]
+    # 2. Otherwise use whatever is currently active
+    active = next((d for d in devices if d.get("is_active")), None)
+    if active:
+        return -1
+    # 3. Fall back to the first available device
+    return devices[0]["id"]
 
 
 def start_playback_on_active_device(track_uri: str, playlist_uri: str) -> int:
     device_id = find_active_device()
     if device_id:
         if device_id != -1:
-            sp.transfer_playback(device_id, force_play=False)
+            # Transfer to the target device and begin playback on it.
+            sp.transfer_playback(device_id, force_play=True)
             sp.start_playback(device_id=device_id, uris=[track_uri])
         else:
             sp.start_playback(uris=[track_uri])

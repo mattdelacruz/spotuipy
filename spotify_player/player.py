@@ -48,6 +48,8 @@ class Player(Static):
     BINDINGS = [
         ("ctrl+d", "scroll_down", "Scroll Down"),
         ("ctrl+u", "scroll_up", "Scroll Up"),
+        ("n", "next_track", "Next Track"),
+        ("p", "previous_track", "Previous Track"),
     ]
 
     def __init__(self):
@@ -154,9 +156,8 @@ class Player(Static):
         next_track_uri = self.track_queue.next_track(
             self.curr_playing_playlist)
         if next_track_uri is None:
-            # check for next page
+            # Queue empty: try to load the next page of the playlist
             while self.action_scroll_down():
-                # get the track of the first item in the list
                 next_tracks = self.curr_displayed_tracks[self.curr_playing_playlist]
                 next_track_uri = next_tracks['items'][0]['track']['uri']
                 next_track_artist = next_tracks['items'][0]['track']['artists'][0]['name']
@@ -171,11 +172,10 @@ class Player(Static):
                 start_playback_on_active_device(
                     next_track_uri, self.curr_playing_playist_uri)
                 return
+            # No more pages: nothing left to play
             return
 
-        else:
-            return
-
+        # Normal case: we have a next track in the queue — play it.
         next_track_artist = self.track_info[self.curr_playing_playlist][next_track_uri]['artist']
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[self.curr_playing_playlist])
@@ -185,6 +185,46 @@ class Player(Static):
         self.curr_track = self.track_uris[next_track_uri][next_track_artist]
         self.curr_row_index = self.track_info[self.curr_playing_playlist][self.curr_track]['row_index']
         self.track_table.move_cursor(row=self.curr_row_index)
+
+    def action_next_track(self) -> None:
+        """Skip to the next track (keybinding)."""
+        if self.curr_playing_playlist is None:
+            return
+        self.play_next_track()
+
+    def action_previous_track(self) -> None:
+        """Skip to the previous track in the current playlist (keybinding)."""
+        if self.curr_playing_playlist is None:
+            return
+        playlist = self.curr_playing_playlist
+        if playlist not in self.uri_list:
+            return
+        if not isinstance(self.curr_track, str) or self.curr_track not in self.track_info.get(playlist, {}):
+            return
+
+        curr_track_uri = self.track_info[playlist][self.curr_track]['uri']
+        keys_list = list(self.uri_list[playlist])
+        try:
+            curr_index = keys_list.index(curr_track_uri)
+        except ValueError:
+            return
+        if curr_index <= 0:
+            # Already at the first track; nothing before it.
+            return
+
+        prev_track_uri = keys_list[curr_index - 1]
+        prev_track_artist = self.track_info[playlist][prev_track_uri]['artist']
+
+        self.curr_playing_playist_uri = str(
+            "spotify:playlist:" + self.playlist_ids[playlist])
+        start_playback_on_active_device(
+            prev_track_uri, self.curr_playing_playist_uri)
+
+        self.curr_track = self.track_uris[prev_track_uri][prev_track_artist]
+        self.curr_row_index = self.track_info[playlist][self.curr_track]['row_index']
+        self.track_table.move_cursor(row=self.curr_row_index)
+        # Rebuild the forward queue from the new position.
+        self.create_queue()
 
     def check_if_track_playing(self) -> None:
         curr_playing_info = SP.currently_playing()

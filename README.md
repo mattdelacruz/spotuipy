@@ -8,7 +8,7 @@ _Currently a work in progress._
 
 ## About
 
-Spotuipy is a terminal-based Spotify remote. It browses your playlists, starts playback on an active device, and shows the currently playing track — title, artist, album art, a live progress bar, and the device playback is coming from. It controls existing Spotify devices through the Web API rather than playing audio itself, so you need Spotify running somewhere (desktop app, web player, or phone).
+Spotuipy is a terminal-based Spotify remote. It browses your playlists, starts playback on an active device, and shows the currently playing track — title, artist, album art, a live progress bar, and the device playback is coming from. It controls Spotify devices through the Web API rather than playing audio itself, so playback needs to happen on a Spotify Connect device — either an existing one (desktop app, web player, phone) or a local headless daemon you run yourself (see [Local playback with spotifyd](#local-playback-with-spotifyd)).
 
 Playback state is driven by a single background poller (`PlaybackMonitor`) that queries Spotify once per second and broadcasts changes as Textual messages. The UI widgets react to those messages, so the display stays in sync even when the track is changed from another device.
 
@@ -36,7 +36,7 @@ In terminals without graphics support (e.g. plain xterm, rxvt-unicode), the rest
 
 - Python 3.10+
 - A Spotify account and a registered app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-- Spotify active on at least one device when controlling playback
+- A Spotify Connect device for playback — either an existing one, or [spotifyd](#local-playback-with-spotifyd) running locally (Spotify Premium required for spotifyd)
 
 ## Setup
 
@@ -85,6 +85,48 @@ On first launch a browser window opens for Spotify authorization. After you appr
 | `Space`          | Play / pause                        |
 | `Ctrl+D`         | Scroll down (next page of tracks)   |
 | `Ctrl+U`         | Scroll up (previous page of tracks) |
+
+## Local playback with spotifyd
+
+By default Spotuipy controls whatever Spotify Connect device is available (your phone, desktop app, a TV, etc.). To play audio directly on the machine running Spotuipy — with no other device involved — run [spotifyd](https://github.com/Spotifyd/spotifyd), a lightweight headless Spotify Connect daemon. **This requires Spotify Premium.**
+
+Spotuipy's device selection prefers a Connect device named `spotifyd`, so once the daemon is running and registered, selecting a track plays through this machine automatically.
+
+1. Install spotifyd (via your package manager or the project's releases).
+
+2. Create `~/.config/spotifyd/spotifyd.conf`. A minimal PulseAudio/PipeWire config:
+
+   ```ini
+   [global]
+   backend = "pulseaudio"
+   device_name = "spotifyd"
+   bitrate = 320
+   cache_path = "~/.cache/spotifyd"
+   volume_normalisation = true
+   normalisation_pregain = -10
+   ```
+
+   The `device_name` must be `spotifyd` to match Spotuipy's device preference. Adjust `backend` for your audio system (`alsa`, `pulseaudio`, etc.).
+
+3. Authenticate once via OAuth. Spotify has phased out username/password login, so spotifyd uses a browser-based flow that persists credentials under `cache_path`:
+
+   ```bash
+   spotifyd authenticate
+   ```
+
+   Settle on `cache_path` before doing this, since the login data is stored there.
+
+4. Run spotifyd in the background as a systemd user service so it's always available:
+
+   ```bash
+   systemctl --user enable --now spotifyd
+   ```
+
+   (On macOS, use `brew services start spotifyd` or a launchd agent instead.)
+
+5. Launch Spotuipy and select a track — playback transfers to the local `spotifyd` device and plays through this machine's speakers.
+
+To verify spotifyd is registered, it should appear in your device list (for example, the Spotify Connect picker in any official client, or a quick `spotipy` `devices()` call). OAuth login registers it with Spotify's backend automatically, so you do not need to claim it from another device first.
 
 ## Required scopes
 
