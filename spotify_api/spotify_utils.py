@@ -1,6 +1,7 @@
 import time
 import os
 from tools.formatting import format_duration, format_artist_track
+from tools.track import Track, PlaylistTracks
 from spotify_api.spotify_client import SpotifyClient
 
 sp = SpotifyClient.get_instance()
@@ -8,13 +9,12 @@ sp = SpotifyClient.get_instance()
 PREFFERED_DEVICE_NAME = os.getenv("SPOTIFYD_DEVICE_NAME", "spotifyd")
 
 
-def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
+def load_tracks(tracks, playlist, playlist_tracks) -> list:
+    """Populate playlist_tracks[playlist] with Track objects and return the
+    formatted and unformatted display rows for the table."""
     list_items = []
     unformatted_list_items = []
-    uri_list[playlist] = []
-
-    if playlist not in track_info:
-        track_info[playlist] = {}
+    playlist_tracks[playlist] = PlaylistTracks()
 
     for row_index, item in enumerate(tracks["items"]):
         track = item["track"]
@@ -24,19 +24,17 @@ def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
         duration_ms = track["duration_ms"]
         duration = format_duration(duration_ms)
         uri = track["uri"]
-        unique_track_name = f"{track_name}_{row_index}"
 
-        if track_name not in track_info[playlist]:
-            track_info[playlist][track_name] = {}
-
-        if uri not in track_uris:
-            track_uris[uri] = {}
-
-        if unique_track_name not in track_info[playlist]:
-            track_info[playlist][unique_track_name] = {}
-
-        if uri not in track_info[playlist]:
-            track_info[playlist][uri] = {}
+        playlist_tracks[playlist].append(
+            Track(
+                uri=uri,
+                name=track_name,
+                artist=artist_name,
+                album=album_name,
+                duration_ms=duration_ms,
+                row_index=row_index,
+            )
+        )
 
         artist_name_formatted, track_name_formatted, album_name_formatted = (
             format_artist_track(artist_name, track_name, album_name, 20)
@@ -51,15 +49,6 @@ def load_tracks(tracks, playlist, track_info, track_uris, uri_list) -> list:
             )
         )
         unformatted_list_items.append((track_name, artist_name, album_name, duration))
-        track_uris[uri][artist_name] = unique_track_name
-        uri_list[playlist].append(uri)
-
-        track_info[playlist][uri]["artist"] = artist_name
-        track_info[playlist][unique_track_name]["track_name"] = track_name
-        track_info[playlist][unique_track_name]["uri"] = uri
-        track_info[playlist][unique_track_name]["artist"] = artist_name
-        track_info[playlist][unique_track_name]["duration_ms"] = duration_ms
-        track_info[playlist][unique_track_name]["row_index"] = row_index
 
     return list_items, unformatted_list_items
 
