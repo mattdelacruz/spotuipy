@@ -87,6 +87,8 @@ class Player(Static):
         self.playlist_ids = None
         self.tracks = None
         self.seek_controller = None
+        self._playback_timer = None
+        self._pending_playback = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -201,7 +203,7 @@ class Player(Static):
                 self.curr_playing_playist_uri = str(
                     "spotify:playlist:" + self.playlist_ids[playlist]
                 )
-                start_playback_on_active_device(
+                self._start_playback_async(
                     next_track_uri, self.curr_playing_playist_uri
                 )
                 return
@@ -215,12 +217,13 @@ class Player(Static):
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[playlist]
         )
-        start_playback_on_active_device(
-            next_track_uri, self.curr_playing_playist_uri)
 
+        # Update cursor/state immediately, then play off the UI thread.
         self.curr_track = track
         self.curr_row_index = track.row_index
         self.track_table.move_cursor(row=self.curr_row_index)
+        self._start_playback_async(
+            next_track_uri, self.curr_playing_playist_uri)
 
     def action_next_track(self) -> None:
         """Skip to the next track (keybinding)."""
@@ -249,14 +252,37 @@ class Player(Static):
         self.curr_playing_playist_uri = str(
             "spotify:playlist:" + self.playlist_ids[playlist]
         )
-        start_playback_on_active_device(
-            prev_track.uri, self.curr_playing_playist_uri)
 
+        # Update local state and cursor immediately so the UI responds instantly,
+        # then send the (blocking) playback command off the UI thread.
         self.curr_track = prev_track
         self.curr_row_index = prev_track.row_index
         self.track_table.move_cursor(row=self.curr_row_index)
-        # Rebuild the forward queue from the new position.
         self.create_queue()
+        self._start_playback_async(
+            prev_track.uri, self.curr_playing_playist_uri)
+
+    def _start_playback_async(self, track_uri: str, playlist_uri: str) -> None:
+        """Debounced playback: rapid n/p presses each move the cursor, but the
+        actual Spotify command only fires ~250ms after presses settle, to the
+        final track — mirroring the seek scrubber's debounce."""
+        self._pending_playback = (track_uri, playlist_uri)
+        if self._playback_timer is not None:
+            self._playback_timer.stop()
+        self._playback_timer = self.set_timer(0.25, self._commit_playback)
+
+    def _commit_playback(self) -> None:
+        self._playback_timer = None
+        pending = self._pending_playback
+        if pending is None:
+            return
+        self._pending_playback = None
+        track_uri, playlist_uri = pending
+        self.run_worker(
+            lambda: start_playback_on_active_device(track_uri, playlist_uri),
+            thread=True,
+            exclusive=True,
+        )
 
     def check_if_track_playing(self) -> None:
         # NOTE: runs on a worker thread (see on_mount). The blocking SP.* reads
@@ -339,9 +365,9 @@ class Player(Static):
             pass
 
     def create_queue(self) -> None:
-        curr_playing = SP.currently_playing()
-
-        if not curr_playing or not curr_playing["is_playing"]:
+        # Use the monitor's cached state instead of a blocking API read.
+        monitor = self.app.query_one(PlaybackMonitor)
+        if not monitor.is_playing:
             return
 
         if not isinstance(self.curr_track, Track):
