@@ -1,4 +1,5 @@
 from textual import work
+import time
 from textual_image.widget import Image as AlbumImage
 from PIL import Image as PILImage
 from io import BytesIO
@@ -34,7 +35,7 @@ class PlaybackMonitor(Widget):
 
         def __init__(self, track_name: str, track_artist: str,
                      progress_ms: int, duration_ms: int, track_uri: str, art_url: str,
-                     device_name: str = None) -> None:
+                     device_name: str = None, trust_progress: bool = True) -> None:
             super().__init__()
             self.track_name = track_name
             self.track_artist = track_artist
@@ -43,6 +44,7 @@ class PlaybackMonitor(Widget):
             self.track_uri = track_uri
             self.art_url = art_url
             self.device_name = device_name
+            self.trust_progress = True
 
     class TrackEnded(Message):
         """Posted when the playing track changes (the previous one ended)."""
@@ -59,6 +61,7 @@ class PlaybackMonitor(Widget):
         self._last_playing = False
         self._last_progress_ms = 0
         self._last_duration_ms = 0
+        self._seek_guard_until = 0.0
         self.set_interval(1, self.poll)
 
     def _ended_naturally(self) -> bool:
@@ -105,6 +108,7 @@ class PlaybackMonitor(Widget):
         art_url = images[0]['url'] if images else None
         device = track.get('device') or {}
         device_name = device.get('name')
+        in_seek_guard = time.monotonic() < self._seek_guard_until
         self._last_playing = True
         self._last_progress_ms = track['progress_ms']
         self._last_duration_ms = item['duration_ms']
@@ -116,7 +120,13 @@ class PlaybackMonitor(Widget):
             track_uri=curr_uri,
             art_url=art_url,
             device_name=device_name,
+            trust_progress=not in_seek_guard,
         ))
+
+    def notify_seek(self) -> None:
+        """Called when the user seeks; suppresses position snap-back until the
+        seek has had time to land on the device."""
+        self._seek_guard_until = time.monotonic() + 2.0
 
 
 class PlaylistLabel(ListItem):
@@ -150,12 +160,13 @@ class TrackProgress(Static):
             1/10, self.make_progress, pause=True)
 
     def on_playback_monitor_playback_changed(self, message) -> None:
-        """Snap to ground truth from the monitor's poll, then keep ticking locally."""
         if self.is_active:
-            self.update_progress_bar(message.progress_ms, message.duration_ms)
-            # correct the local counter so the 100ms ticker can't drift
-            self.progress_ms = message.progress_ms
-            self.total_time_ms = message.duration_ms
+            if message.trust_progress:
+                self.update_progress_bar(
+                    message.progress_ms, message.duration_ms)
+                self.progress_ms = message.progress_ms
+                self.total_time_ms = message.duration_ms
+            # during seek guard: leave local progress_ms alone, keep ticking
         else:
             self.start_progress_bar(message.progress_ms, message.duration_ms)
 
