@@ -57,7 +57,16 @@ class PlaybackMonitor(Widget):
     def on_mount(self) -> None:
         self._last_uri = None
         self._last_playing = False
+        self._last_progress_ms = 0
+        self._last_duration_ms = 0
         self.set_interval(1, self.poll)
+
+    def _ended_naturally(self) -> bool:
+        """True if the last-seen track was near its end (within 3s), meaning it
+        finished on its own rather than being skipped mid-track by the user."""
+        if self._last_duration_ms <= 0:
+            return False
+        return self._last_progress_ms >= self._last_duration_ms - 3000
 
     def poll(self) -> None:
         try:
@@ -73,18 +82,23 @@ class PlaybackMonitor(Widget):
             # transition from playing -> stopped
             if self._last_playing:
                 self._last_playing = False
-                if self._last_uri:
+                # Only auto-advance if the track actually ran to its end.
+                if self._last_uri and self._ended_naturally():
                     self.post_message(self.TrackEnded(self._last_uri))
                 self._last_uri = None
+                self._last_progress_ms = 0
+                self._last_duration_ms = 0
                 self.post_message(self.PlaybackStopped())
             return
 
         item = track['item']
         curr_uri = item['uri']
 
-        # track changed (including coming back from stopped): previous one ended
+        # Track changed. Only treat it as a natural end (auto-advance) if the
+        # previous track was near completion; otherwise it was a manual skip
+        # (n/p keybinding or track selection) and we must NOT advance again.
         if curr_uri != self._last_uri:
-            if self._last_uri:
+            if self._last_uri and self._ended_naturally():
                 self.post_message(self.TrackEnded(self._last_uri))
             self._last_uri = curr_uri
         images = item['album']['images']
@@ -92,6 +106,8 @@ class PlaybackMonitor(Widget):
         device = track.get('device') or {}
         device_name = device.get('name')
         self._last_playing = True
+        self._last_progress_ms = track['progress_ms']
+        self._last_duration_ms = item['duration_ms']
         self.post_message(self.PlaybackChanged(
             track_name=item['name'],
             track_artist=item['artists'][0]['name'],
