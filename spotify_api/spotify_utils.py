@@ -25,16 +25,14 @@ def load_tracks(tracks, playlist, playlist_tracks) -> list:
         duration = format_duration(duration_ms)
         uri = track["uri"]
 
-        playlist_tracks[playlist].append(
-            Track(
-                uri=uri,
-                name=track_name,
-                artist=artist_name,
-                album=album_name,
-                duration_ms=duration_ms,
-                row_index=row_index,
-            )
-        )
+        playlist_tracks[playlist].append(Track(
+            uri=uri,
+            name=track_name,
+            artist=artist_name,
+            album=album_name,
+            duration_ms=duration_ms,
+            row_index=row_index,
+        ))
 
         artist_name_formatted, track_name_formatted, album_name_formatted = (
             format_artist_track(artist_name, track_name, album_name, 20)
@@ -48,7 +46,8 @@ def load_tracks(tracks, playlist, playlist_tracks) -> list:
                 duration,
             )
         )
-        unformatted_list_items.append((track_name, artist_name, album_name, duration))
+        unformatted_list_items.append(
+            (track_name, artist_name, album_name, duration))
 
     return list_items, unformatted_list_items
 
@@ -56,11 +55,11 @@ def load_tracks(tracks, playlist, playlist_tracks) -> list:
 def find_active_device(preferred_name=None):
     preferred_name = preferred_name or PREFFERED_DEVICE_NAME
     devices = sp.devices()["devices"]
-    print(f"Available devices: {[d['name'] for d in devices]}")
     if not devices:
         return None
     # 1. Prefer our local daemon by name, if present
-    preferred = next((d for d in devices if d.get("name") == preferred_name), None)
+    preferred = next(
+        (d for d in devices if d.get("name") == preferred_name), None)
     if preferred:
         return -1 if preferred.get("is_active") else preferred["id"]
     # 2. Otherwise use whatever is currently active
@@ -75,7 +74,15 @@ def start_playback_on_active_device(track_uri: str, playlist_uri: str) -> int:
     device_id = find_active_device()
     if device_id:
         if device_id != -1:
-            # Transfer to the target device and begin playback on it.
+            # Pause whatever is currently playing first, so the old device
+            # can't keep playing alongside the new one (the dual-playback bug).
+            try:
+                current = sp.current_playback()
+                if current and current.get("is_playing"):
+                    sp.pause_playback()
+            except Exception:
+                pass
+            # Move the active device to our target, then start the chosen track.
             sp.transfer_playback(device_id, force_play=True)
             sp.start_playback(device_id=device_id, uris=[track_uri])
         else:
