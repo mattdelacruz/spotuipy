@@ -44,7 +44,7 @@ class PlaybackMonitor(Widget):
             self.track_uri = track_uri
             self.art_url = art_url
             self.device_name = device_name
-            self.trust_progress = True
+            self.trust_progress = trust_progress
 
     class TrackEnded(Message):
         """Posted when the playing track changes (the previous one ended)."""
