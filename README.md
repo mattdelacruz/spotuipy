@@ -2,8 +2,6 @@
 
 _A lightweight terminal UI for controlling Spotify playback, written in Python with [Textual](https://textual.textualize.io/) and [Spotipy](https://spotipy.readthedocs.io/)._
 
-_Currently a work in progress._
-
 ![Spotuipy-UI](/images/spotuipy_player_image.png?raw=true)
 
 ## About
@@ -151,12 +149,20 @@ spotify_api/
 spotify_player/
   player.py                   Playlist/track browsing, queue, auto-advance
   player_controls.py          Now-playing controls layout
+  seek_controller.py          Debounced seeking/scrubbing logic
 tools/
   widgets.py                  UI widgets (now-playing display, progress bar, album art)
+  playback_monitor.py         Polls Spotify and broadcasts playback state as events
+  track.py                    Track data model and ordered playlist collection
   formatting.py               Duration/text formatting helpers
-  playback_monitor.py         Polls Spotify and broadcasts playback states
+tests/
+  test_track.py               Track model lookups and ordering
+  test_ended_naturally.py     Natural-end vs. manual-skip heuristic
+  test_device_selection.py    Device preference order
 css/
   playlist.tcss               Textual styling
+run_tests.sh                  Labelled test runner (Linux/macOS)
+run_tests.ps1                 Labelled test runner (Windows)
 ```
 
 ## Notes
